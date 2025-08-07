@@ -1,0 +1,1 @@
+"""Trace formatting and output utilities."""

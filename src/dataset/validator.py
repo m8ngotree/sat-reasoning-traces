@@ -1,0 +1,478 @@
+import json
+import jsonschema
+from typing import List, Dict, Any, Set, Optional, Tuple
+from pathlib import Path
+import logging
+from dataclasses import dataclass
+import statistics
+
+from src.core.sat_generator import ProblemType, Clause, SATInstance
+from src.core.sat_solver import DecisionType
+
+
+@dataclass
+class ValidationResult:
+    is_valid: bool
+    errors: List[str]
+    warnings: List[str]
+    statistics: Dict[str, Any]
+
+
+class DatasetValidator:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        
+        # JSON schema for validating dataset structure
+        self.instance_schema = {
+            "type": "object",
+            "required": ["instance_id", "problem", "reasoning_trace", "solution", "step_by_step", "solver_type"],
+            "properties": {
+                "instance_id": {"type": "integer"},
+                "solver_type": {"type": "string", "enum": ["CDCL", "DPLL"]},
+                "generation_seed": {"type": "integer"},
+                "problem": {
+                    "type": "object",
+                    "required": ["type", "num_variables", "num_clauses", "clauses"],
+                    "properties": {
+                        "type": {"type": "string"},
+                        "num_variables": {"type": "integer", "minimum": 1},
+                        "num_clauses": {"type": "integer", "minimum": 0},
+                        "clauses": {"type": "array", "items": {"type": "string"}},
+                        "dimacs": {"type": "string"},
+                        "metadata": {"type": "object"}
+                    }
+                },
+                "reasoning_trace": {"type": "string", "minLength": 100},
+                "solution": {
+                    "type": "object",
+                    "required": ["satisfiable", "steps_taken"],
+                    "properties": {
+                        "satisfiable": {"type": ["boolean", "null"]},
+                        "assignment": {"type": ["object", "null"]},
+                        "steps_taken": {"type": "integer", "minimum": 0},
+                        "conflicts_encountered": {"type": "integer", "minimum": 0},
+                        "decisions_made": {"type": "integer", "minimum": 0}
+                    }
+                },
+                "step_by_step": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["step_number", "decision_type", "decision_level", "explanation"],
+                        "properties": {
+                            "step_number": {"type": "integer", "minimum": 0},
+                            "decision_type": {"type": "string"},
+                            "assignment": {"type": ["string", "null"]},
+                            "clause": {"type": ["string", "null"]},
+                            "assignments_before": {"type": "object"},
+                            "assignments_after": {"type": "object"},
+                            "decision_level": {"type": "integer", "minimum": 0},
+                            "explanation": {"type": "string", "minLength": 10}
+                        }
+                    }
+                }
+            }
+        }
+    
+    def validate_dataset_structure(self, dataset: Dict[str, Any]) -> ValidationResult:
+        """Validate the overall dataset structure"""
+        errors = []
+        warnings = []
+        
+        # Check top-level structure
+        if "instances" not in dataset:
+            errors.append("Dataset missing 'instances' field")
+            return ValidationResult(False, errors, warnings, {})
+        
+        if not isinstance(dataset["instances"], list):
+            errors.append("'instances' field must be a list")
+            return ValidationResult(False, errors, warnings, {})
+        
+        if len(dataset["instances"]) == 0:
+            errors.append("Dataset contains no instances")
+            return ValidationResult(False, errors, warnings, {})
+        
+        # Validate each instance
+        valid_instances = 0
+        for i, instance in enumerate(dataset["instances"]):
+            try:
+                jsonschema.validate(instance, self.instance_schema)
+                valid_instances += 1
+            except jsonschema.ValidationError as e:
+                errors.append(f"Instance {i}: {e.message}")
+            except Exception as e:
+                errors.append(f"Instance {i}: Unexpected validation error: {str(e)}")
+        
+        # Check if we have any valid instances
+        if valid_instances == 0:
+            errors.append("No valid instances found in dataset")
+            return ValidationResult(False, errors, warnings, {})
+        
+        if valid_instances < len(dataset["instances"]):
+            warnings.append(f"Only {valid_instances}/{len(dataset['instances'])} instances are valid")
+        
+        statistics = {
+            "total_instances": len(dataset["instances"]),
+            "valid_instances": valid_instances,
+            "invalid_instances": len(dataset["instances"]) - valid_instances
+        }
+        
+        is_valid = len(errors) == 0
+        return ValidationResult(is_valid, errors, warnings, statistics)
+    
+    def validate_sat_logic(self, instance: Dict[str, Any]) -> ValidationResult:
+        """Validate the SAT problem logic and solver trace consistency"""
+        errors = []
+        warnings = []
+        
+        try:
+            # Parse problem data
+            num_variables = instance["problem"]["num_variables"]
+            clauses = instance["problem"]["clauses"]
+            satisfiable = instance["solution"]["satisfiable"]
+            final_assignment = instance["solution"]["assignment"]
+            steps = instance["step_by_step"]
+            
+            # Validate variable numbering
+            max_var_in_clauses = 0
+            for clause_str in clauses:
+                variables = self._extract_variables_from_clause(clause_str)
+                if variables:
+                    max_var_in_clauses = max(max_var_in_clauses, max(variables))
+            
+            if max_var_in_clauses > num_variables:
+                errors.append(f"Clause references variable {max_var_in_clauses} but only {num_variables} variables declared")
+            
+            # Validate satisfiability claim
+            if satisfiable is True and final_assignment:
+                is_actually_sat = self._check_satisfiability(clauses, final_assignment)
+                if not is_actually_sat:
+                    errors.append("Instance claimed satisfiable but assignment doesn't satisfy all clauses")
+            
+            # Validate solver trace consistency
+            trace_errors = self._validate_solver_trace(steps, num_variables)
+            errors.extend(trace_errors)
+            
+            # Check for reasonable solving statistics
+            decisions = sum(1 for step in steps if step.get("decision_type") == "decide")
+            conflicts = sum(1 for step in steps if step.get("decision_type") == "conflict")
+            
+            if satisfiable is False and conflicts == 0:
+                warnings.append("Unsatisfiable instance with no conflicts recorded - unusual")
+            
+            if decisions > num_variables * 3:
+                warnings.append(f"Very high number of decisions ({decisions}) for {num_variables} variables")
+            
+        except Exception as e:
+            errors.append(f"Error during SAT logic validation: {str(e)}")
+        
+        statistics = {
+            "max_variable": max_var_in_clauses if 'max_var_in_clauses' in locals() else 0,
+            "decision_steps": decisions if 'decisions' in locals() else 0,
+            "conflict_steps": conflicts if 'conflicts' in locals() else 0
+        }
+        
+        is_valid = len(errors) == 0
+        return ValidationResult(is_valid, errors, warnings, statistics)
+    
+    def _extract_variables_from_clause(self, clause_str: str) -> Set[int]:
+        """Extract variable numbers from a clause string"""
+        variables = set()
+        # Simple parsing - look for x followed by numbers
+        tokens = clause_str.replace("¬", "").replace("∨", "").replace("x", " ").split()
+        for token in tokens:
+            try:
+                var = int(token.strip())
+                if var > 0:
+                    variables.add(var)
+            except ValueError:
+                continue
+        return variables
+    
+    def _check_satisfiability(self, clauses: List[str], assignment: Dict[str, bool]) -> bool:
+        """Check if an assignment satisfies all clauses"""
+        # Convert string keys to integers
+        int_assignment = {}
+        for key, value in assignment.items():
+            try:
+                if isinstance(key, str):
+                    int_assignment[int(key)] = value
+                else:
+                    int_assignment[key] = value
+            except ValueError:
+                continue
+        
+        for clause_str in clauses:
+            if not self._is_clause_satisfied(clause_str, int_assignment):
+                return False
+        return True
+    
+    def _is_clause_satisfied(self, clause_str: str, assignment: Dict[int, bool]) -> bool:
+        """Check if a single clause is satisfied by an assignment"""
+        # Parse clause - this is a simplified parser
+        # Look for patterns like "x1", "¬x2", etc.
+        
+        # Split by disjunction symbol
+        literals = clause_str.split("∨")
+        
+        for literal in literals:
+            literal = literal.strip()
+            
+            # Check if negated
+            negated = "¬" in literal
+            
+            # Extract variable number
+            var_part = literal.replace("¬", "").replace("x", "").strip()
+            try:
+                var_num = int(var_part)
+                if var_num in assignment:
+                    var_value = assignment[var_num]
+                    literal_value = var_value if not negated else not var_value
+                    if literal_value:
+                        return True  # Clause satisfied by this literal
+            except ValueError:
+                continue
+        
+        return False  # No literal satisfied the clause
+    
+    def _validate_solver_trace(self, steps: List[Dict[str, Any]], num_variables: int) -> List[str]:
+        """Validate the consistency of the solver trace"""
+        errors = []
+        
+        if not steps:
+            errors.append("Empty solver trace")
+            return errors
+        
+        # Check step numbering
+        expected_step = 0
+        for i, step in enumerate(steps):
+            if step.get("step_number", -1) != expected_step:
+                errors.append(f"Step {i}: Expected step number {expected_step}, got {step.get('step_number')}")
+            expected_step += 1
+        
+        # Check decision levels are reasonable (more lenient validation)
+        max_level_seen = 0
+        for i, step in enumerate(steps):
+            current_level = step.get("decision_level", 0)
+            decision_type = step.get("decision_type", "")
+            
+            # Update max level seen
+            if decision_type == "decide":
+                max_level_seen = max(max_level_seen, current_level)
+            
+            # Only check for obviously wrong levels
+            if current_level < 0:
+                errors.append(f"Step {i}: Negative decision level {current_level}")
+            elif current_level > num_variables + 10:  # Allow some buffer
+                errors.append(f"Step {i}: Decision level {current_level} too high for {num_variables} variables")
+        
+        # Check assignment consistency
+        for i, step in enumerate(steps):
+            assignments_before = step.get("assignments_before", {})
+            assignments_after = step.get("assignments_after", {})
+            
+            # Validate variable bounds
+            for var_str in list(assignments_before.keys()) + list(assignments_after.keys()):
+                try:
+                    var = int(var_str)
+                    if var < 1 or var > num_variables:
+                        errors.append(f"Step {i}: Variable {var} out of bounds (1-{num_variables})")
+                except ValueError:
+                    errors.append(f"Step {i}: Invalid variable identifier '{var_str}'")
+        
+        return errors
+    
+    def validate_reasoning_quality(self, instance: Dict[str, Any]) -> ValidationResult:
+        """Validate the quality of natural language reasoning traces"""
+        errors = []
+        warnings = []
+        
+        reasoning_trace = instance.get("reasoning_trace", "")
+        
+        # Check minimum length
+        if len(reasoning_trace) < 500:
+            warnings.append("Reasoning trace is quite short (< 500 characters)")
+        
+        # Check for key sections
+        required_sections = ["Problem Description", "Solving Process", "Step-by-Step Reasoning", "Final Result"]
+        for section in required_sections:
+            if section not in reasoning_trace:
+                errors.append(f"Missing section: '{section}' in reasoning trace")
+        
+        # Check explanation quality in steps
+        steps = instance.get("step_by_step", [])
+        short_explanations = 0
+        
+        for i, step in enumerate(steps):
+            explanation = step.get("explanation", "")
+            if len(explanation) < 20:
+                short_explanations += 1
+        
+        if short_explanations > len(steps) * 0.3:  # More than 30% have short explanations
+            warnings.append(f"Many steps have short explanations ({short_explanations}/{len(steps)})")
+        
+        # Check for mathematical notation
+        if "∨" not in reasoning_trace and "∧" not in reasoning_trace:
+            warnings.append("Reasoning trace lacks mathematical notation")
+        
+        statistics = {
+            "trace_length": len(reasoning_trace),
+            "num_steps": len(steps),
+            "short_explanations": short_explanations
+        }
+        
+        is_valid = len(errors) == 0
+        return ValidationResult(is_valid, errors, warnings, statistics)
+    
+    def validate_complete_dataset(self, dataset: Dict[str, Any]) -> ValidationResult:
+        """Run complete validation on a dataset"""
+        all_errors = []
+        all_warnings = []
+        all_statistics = {}
+        
+        # Structure validation
+        struct_result = self.validate_dataset_structure(dataset)
+        all_errors.extend([f"Structure: {e}" for e in struct_result.errors])
+        all_warnings.extend([f"Structure: {w}" for w in struct_result.warnings])
+        all_statistics.update(struct_result.statistics)
+        
+        if not struct_result.is_valid:
+            return ValidationResult(False, all_errors, all_warnings, all_statistics)
+        
+        # Instance-level validation
+        valid_instances = 0
+        logic_errors = 0
+        quality_errors = 0
+        
+        for i, instance in enumerate(dataset["instances"][:100]):  # Validate first 100 for performance
+            # SAT logic validation
+            logic_result = self.validate_sat_logic(instance)
+            if logic_result.is_valid:
+                valid_instances += 1
+            else:
+                logic_errors += 1
+                all_errors.extend([f"Instance {i} Logic: {e}" for e in logic_result.errors])
+            
+            all_warnings.extend([f"Instance {i} Logic: {w}" for w in logic_result.warnings])
+            
+            # Reasoning quality validation
+            quality_result = self.validate_reasoning_quality(instance)
+            if not quality_result.is_valid:
+                quality_errors += 1
+                all_errors.extend([f"Instance {i} Quality: {e}" for e in quality_result.errors])
+            
+            all_warnings.extend([f"Instance {i} Quality: {w}" for w in quality_result.warnings])
+        
+        # Overall statistics
+        all_statistics.update({
+            "validation_sample_size": min(100, len(dataset["instances"])),
+            "logically_valid_instances": valid_instances,
+            "logic_errors": logic_errors,
+            "quality_errors": quality_errors
+        })
+        
+        # Dataset-level statistics
+        problem_types = {}
+        satisfiability_dist = {"sat": 0, "unsat": 0, "unknown": 0}
+        
+        for instance in dataset["instances"]:
+            prob_type = instance.get("problem", {}).get("type", "unknown")
+            problem_types[prob_type] = problem_types.get(prob_type, 0) + 1
+            
+            sat_result = instance.get("solution", {}).get("satisfiable")
+            if sat_result is True:
+                satisfiability_dist["sat"] += 1
+            elif sat_result is False:
+                satisfiability_dist["unsat"] += 1
+            else:
+                satisfiability_dist["unknown"] += 1
+        
+        all_statistics.update({
+            "problem_type_distribution": problem_types,
+            "satisfiability_distribution": satisfiability_dist
+        })
+        
+        is_valid = len(all_errors) == 0
+        return ValidationResult(is_valid, all_errors, all_warnings, all_statistics)
+    
+    def validate_dataset_file(self, file_path: Path) -> ValidationResult:
+        """Validate a dataset file"""
+        try:
+            with open(file_path, 'r') as f:
+                if file_path.suffix == '.json':
+                    dataset = json.load(f)
+                elif file_path.suffix == '.jsonl':
+                    # Load JSONL format
+                    instances = []
+                    for line in f:
+                        if line.strip():
+                            instances.append(json.loads(line))
+                    dataset = {"instances": instances}
+                else:
+                    return ValidationResult(False, [f"Unsupported file format: {file_path.suffix}"], [], {})
+            
+            return self.validate_complete_dataset(dataset)
+            
+        except json.JSONDecodeError as e:
+            return ValidationResult(False, [f"JSON parsing error: {str(e)}"], [], {})
+        except Exception as e:
+            return ValidationResult(False, [f"File reading error: {str(e)}"], [], {})
+    
+    def generate_validation_report(self, result: ValidationResult, output_path: Optional[Path] = None) -> str:
+        """Generate a human-readable validation report"""
+        report = "# Dataset Validation Report\n\n"
+        
+        # Overall status
+        status = "✅ VALID" if result.is_valid else "❌ INVALID"
+        report += f"**Overall Status**: {status}\n\n"
+        
+        # Statistics
+        if result.statistics:
+            report += "## Statistics\n"
+            for key, value in result.statistics.items():
+                if isinstance(value, dict):
+                    report += f"- **{key}**:\n"
+                    for subkey, subvalue in value.items():
+                        report += f"  - {subkey}: {subvalue}\n"
+                else:
+                    report += f"- **{key}**: {value}\n"
+            report += "\n"
+        
+        # Errors
+        if result.errors:
+            report += f"## Errors ({len(result.errors)})\n"
+            for error in result.errors:
+                report += f"- {error}\n"
+            report += "\n"
+        
+        # Warnings
+        if result.warnings:
+            report += f"## Warnings ({len(result.warnings)})\n"
+            for warning in result.warnings:
+                report += f"- {warning}\n"
+            report += "\n"
+        
+        if not result.errors and not result.warnings:
+            report += "## No Issues Found\n"
+            report += "The dataset passed all validation checks.\n"
+        
+        # Save report if path provided
+        if output_path:
+            with open(output_path, 'w') as f:
+                f.write(report)
+        
+        return report
+
+
+if __name__ == "__main__":
+    # Example validation
+    validator = DatasetValidator()
+    
+    # Validate a dataset file
+    dataset_path = Path("sat_reasoning_dataset/sat_dataset_20240101_120000.json")
+    if dataset_path.exists():
+        result = validator.validate_dataset_file(dataset_path)
+        report = validator.generate_validation_report(result)
+        print(report)
+    else:
+        print("No dataset file found for validation")
