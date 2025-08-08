@@ -9,13 +9,14 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 setup(
     name="sat-rl-environment",
     version="1.0.0",
-    author="Your Name",
-    author_email="your.email@example.com",
+    author="m8ngotree",
+    author_email="m8ngotree@gmail.com",
     description="A comprehensive system for building SAT reasoning datasets for large language models",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/sat-rl-environment",
+    url="https://github.com/m8ngotree/sat-rl-environment",
     packages=find_packages(),
+    py_modules=["main"],
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
@@ -39,8 +40,8 @@ setup(
     },
     keywords="sat solver reasoning dataset machine learning ai",
     project_urls={
-        "Bug Reports": "https://github.com/yourusername/sat-rl-environment/issues",
-        "Source": "https://github.com/yourusername/sat-rl-environment",
-        "Documentation": "https://github.com/yourusername/sat-rl-environment#readme",
+        "Bug Reports": "https://github.com/m8ngotree/sat-rl-environment/issues",
+        "Source": "https://github.com/m8ngotree/sat-rl-environment",
+        "Documentation": "https://github.com/m8ngotree/sat-rl-environment#readme",
     },
 )

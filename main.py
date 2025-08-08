@@ -96,7 +96,6 @@ def generate_dataset(args):
         max_solve_time_seconds=args.timeout,
         include_unsatisfiable=True,
         output_directory=args.output_dir,
-        num_processes=args.processes,
         random_seed=args.seed
     )
     
@@ -166,13 +165,23 @@ def export_dataset(dataset: Dict[str, Any], args):
     
     exporter = DatasetExporter(export_config)
     
-    if args.export_formats == ["all"]:
+    if args.formats == ["all"]:
         exported_files = exporter.export_all_formats(dataset, "sat_reasoning_dataset")
     else:
         exported_files = {}
-        for format_name in args.export_formats:
-            if hasattr(exporter, f"export_to_{format_name}"):
-                method = getattr(exporter, f"export_to_{format_name}")
+        format_to_method = {
+            "huggingface": "export_to_huggingface_format",
+            "openai": "export_to_openai_format",
+            "alpaca": "export_to_alpaca_format",
+            "csv": "export_to_csv",
+            "pytorch": "export_to_pytorch",
+            "hdf5": "export_to_hdf5",
+            "xml": "export_to_xml",
+        }
+        for format_name in args.formats:
+            method_name = format_to_method.get(format_name)
+            if method_name and hasattr(exporter, method_name):
+                method = getattr(exporter, method_name)
                 exported_files[format_name] = method(dataset, "sat_reasoning_dataset")
     
     print(f"\nExported formats:")
@@ -221,8 +230,6 @@ Examples:
                            help='Maximum number of variables (default: 10)')
     gen_parser.add_argument('--timeout', type=int, default=300,
                            help='Solver timeout in seconds (default: 300)')
-    gen_parser.add_argument('--processes', type=int, default=1,
-                           help='Sequential processing only (default: 1)')
     gen_parser.add_argument('--seed', type=int, default=42,
                            help='Random seed for reproducibility (default: 42)')
     gen_parser.add_argument('--output-dir', default='sat_dataset',
@@ -263,13 +270,11 @@ Examples:
                            help='Maximum number of variables (default: 10)')
     pip_parser.add_argument('--timeout', type=int, default=300,
                            help='Solver timeout in seconds (default: 300)')
-    pip_parser.add_argument('--processes', type=int, default=1,
-                           help='Sequential processing only (default: 1)')
     pip_parser.add_argument('--seed', type=int, default=42,
                            help='Random seed for reproducibility (default: 42)')
     pip_parser.add_argument('--output-dir', default='sat_dataset',
                            help='Output directory (default: sat_dataset)')
-    pip_parser.add_argument('--formats', nargs='+', dest='export_formats',
+    pip_parser.add_argument('--formats', nargs='+', dest='formats',
                            choices=['huggingface', 'openai', 'alpaca', 'csv', 'pytorch', 'hdf5', 'xml', 'all'],
                            default=['huggingface', 'csv'],
                            help='Export formats (default: huggingface csv)')

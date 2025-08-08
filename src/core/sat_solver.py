@@ -79,215 +79,192 @@ class DPLLSolver:
         self.instance = instance
         self.trace = SolverTrace(instance)
         self.step_counter = 0
-    
-    
-    def solve(self) -> bool:
-        """Main iterative DPLL solver with proper state tracking"""
-        assignments = {}
-        level = 0
-        
-        while True:
-            # Unit propagation phase
-            while True:
-                unit_clause = self._find_unit_clause(assignments)
-                if not unit_clause:
-                    break  # No more unit clauses
-                
-                var, value = unit_clause
+
+    def _dpll_recursive(self, clauses: List[Clause], assignments: Dict[int, bool], 
+                       level: int) -> Tuple[bool, Optional[Dict[int, bool]]]:
+        assignments_before = copy.deepcopy(assignments)
+
+        # Simplify clauses based on current assignments
+        simplified_clauses = []
+        for clause in clauses:
+            satisfied = False
+            new_literals = []
+
+            for lit in clause.literals:
+                var = abs(lit)
                 if var in assignments:
-                    continue  # Already assigned
-                
-                assignments_before = copy.deepcopy(assignments)
-                assignments[var] = value
-                
-                # Find the clause that forced this assignment
-                forcing_clause = self._find_forcing_clause(var, value, assignments_before)
-                assignment = Assignment(var, value, level, forcing_clause)
-                
+                    expected_value = lit > 0
+                    if assignments[var] == expected_value:
+                        satisfied = True
+                        break
+                    # Literal is false, don't add it
+                else:
+                    new_literals.append(lit)
+
+            if satisfied:
+                continue  # Clause is satisfied, ignore it
+
+            if not new_literals:
+                # Empty clause - conflict
                 step = SolverStep(
                     step_number=self.step_counter,
-                    decision_type=DecisionType.PROPAGATE,
-                    assignment=assignment,
-                    clause=forcing_clause,
+                    decision_type=DecisionType.CONFLICT,
+                    assignment=None,
+                    clause=clause,
                     assignments_before=assignments_before,
                     assignments_after=copy.deepcopy(assignments),
                     decision_level=level,
-                    explanation=f"Unit clause {forcing_clause} forces {var} = {value}"
+                    explanation=f"Conflict: clause {clause} becomes empty"
                 )
                 self.trace.add_step(step)
                 self.step_counter += 1
-                
-                # Check for conflict
-                if self._has_conflict(assignments):
-                    conflict_clause = self._find_conflict_clause(assignments)
+                return False, None
+
+            simplified_clauses.append(Clause(new_literals))
+
+        if not simplified_clauses:
+            # All clauses satisfied
+            return True, assignments
+
+        # Unit propagation (one assignment per step to maintain trace consistency)
+        while True:
+            # Recompute simplified clauses based on current assignments
+            simplified_clauses = []
+            unit_candidates = []
+            for clause in clauses:
+                satisfied = False
+                new_literals = []
+                for lit in clause.literals:
+                    var = abs(lit)
+                    if var in assignments:
+                        expected_value = lit > 0
+                        if assignments[var] == expected_value:
+                            satisfied = True
+                            break
+                        # else literal is false
+                    else:
+                        new_literals.append(lit)
+                if satisfied:
+                    continue
+                if not new_literals:
+                    # Empty clause - conflict
                     step = SolverStep(
                         step_number=self.step_counter,
                         decision_type=DecisionType.CONFLICT,
                         assignment=None,
-                        clause=conflict_clause,
+                        clause=clause,
                         assignments_before=copy.deepcopy(assignments),
                         assignments_after=copy.deepcopy(assignments),
                         decision_level=level,
-                        explanation=f"Conflict: clause {conflict_clause} becomes empty"
+                        explanation=f"Conflict: clause {clause} becomes empty"
                     )
                     self.trace.add_step(step)
                     self.step_counter += 1
-                    
-                    self.trace.final_result = False
-                    self.trace.final_assignment = None
-                    return False
-            
-            # Check if all clauses are satisfied
-            if self._all_clauses_satisfied(assignments):
-                self.trace.final_result = True
-                self.trace.final_assignment = assignments
-                return True
-            
-            # Choose next variable to decide
-            unassigned_vars = set(range(1, self.instance.num_variables + 1)) - set(assignments.keys())
-            if not unassigned_vars:
-                # All variables assigned but not satisfied - shouldn't happen
-                self.trace.final_result = False
-                self.trace.final_assignment = None
-                return False
-            
-            var = min(unassigned_vars)  # Simple heuristic
-            level += 1
-            
-            # Make decision
+                    return False, None
+                simplified = Clause(new_literals)
+                simplified_clauses.append(simplified)
+                if len(simplified.literals) == 1:
+                    unit_candidates.append(simplified)
+
+            if not unit_candidates:
+                break
+
+            # Apply exactly one unit propagation per loop iteration
+            clause = unit_candidates[0]
+            lit = clause.literals[0]
+            var = abs(lit)
+            value = lit > 0
+            if var in assignments:
+                # Already assigned; skip and continue
+                break
             assignments_before = copy.deepcopy(assignments)
-            assignments[var] = True
-            assignment = Assignment(var, True, level)
-            
+            assignments[var] = value
+            assignment = Assignment(var, value, level, clause)
             step = SolverStep(
                 step_number=self.step_counter,
-                decision_type=DecisionType.DECIDE,
+                decision_type=DecisionType.PROPAGATE,
                 assignment=assignment,
-                clause=None,
+                clause=clause,
                 assignments_before=assignments_before,
                 assignments_after=copy.deepcopy(assignments),
                 decision_level=level,
-                explanation=f"Decision: try {var} = True at level {level}"
+                explanation=f"Unit clause {clause} forces {var} = {value}"
             )
             self.trace.add_step(step)
             self.step_counter += 1
-    
-    
-    def _find_unit_clause(self, assignments: Dict[int, bool]) -> Optional[Tuple[int, bool]]:
-        """Find a unit clause and return the variable and value to assign"""
-        for clause in self.instance.clauses:
-            unassigned_literals = []
-            satisfied = False
-            
-            for lit in clause.literals:
-                var = abs(lit)
-                expected_value = lit > 0
-                
-                if var in assignments:
-                    if assignments[var] == expected_value:
-                        satisfied = True
-                        break
-                else:
-                    unassigned_literals.append((var, expected_value))
-            
-            if not satisfied and len(unassigned_literals) == 1:
-                var, value = unassigned_literals[0]
-                return var, value
-        
-        return None
-    
-    def _find_forcing_clause(self, var: int, value: bool, assignments: Dict[int, bool]) -> Clause:
-        """Find the clause that forces this variable assignment"""
-        for clause in self.instance.clauses:
-            unassigned_count = 0
-            satisfied = False
-            target_literal = None
-            
-            for lit in clause.literals:
-                curr_var = abs(lit)
-                expected_value = lit > 0
-                
-                if curr_var == var and expected_value == value:
-                    target_literal = lit
-                elif curr_var in assignments:
-                    if assignments[curr_var] == expected_value:
-                        satisfied = True
-                        break
-                else:
-                    unassigned_count += 1
-            
-            if not satisfied and unassigned_count == 0 and target_literal is not None:
-                return clause
-        
-        # Return first clause containing the literal if not found
-        for clause in self.instance.clauses:
-            for lit in clause.literals:
-                if abs(lit) == var and (lit > 0) == value:
-                    return clause
-        
-        return self.instance.clauses[0]  # Fallback
-    
-    def _has_conflict(self, assignments: Dict[int, bool]) -> bool:
-        """Check if current assignments create a conflict (empty clause)"""
-        for clause in self.instance.clauses:
-            satisfied = False
-            has_unassigned = False
-            
-            for lit in clause.literals:
-                var = abs(lit)
-                expected_value = lit > 0
-                
-                if var in assignments:
-                    if assignments[var] == expected_value:
-                        satisfied = True
-                        break
-                else:
-                    has_unassigned = True
-            
-            if not satisfied and not has_unassigned:
-                return True  # Empty clause - conflict
-        
-        return False
-    
-    def _find_conflict_clause(self, assignments: Dict[int, bool]) -> Clause:
-        """Find the clause that causes the conflict"""
-        for clause in self.instance.clauses:
-            satisfied = False
-            has_unassigned = False
-            
-            for lit in clause.literals:
-                var = abs(lit)
-                expected_value = lit > 0
-                
-                if var in assignments:
-                    if assignments[var] == expected_value:
-                        satisfied = True
-                        break
-                else:
-                    has_unassigned = True
-            
-            if not satisfied and not has_unassigned:
-                return clause
-        
-        return self.instance.clauses[0]  # Fallback
-    
-    def _all_clauses_satisfied(self, assignments: Dict[int, bool]) -> bool:
-        """Check if all clauses are satisfied"""
-        for clause in self.instance.clauses:
-            satisfied = False
-            
-            for lit in clause.literals:
-                var = abs(lit)
-                expected_value = lit > 0
-                
-                if var in assignments and assignments[var] == expected_value:
-                    satisfied = True
-                    break
-            
-            if not satisfied:
-                return False
-        
-        return True
-    
+
+        # Choose a variable to branch on
+        unassigned_vars = set(range(1, self.instance.num_variables + 1)) - set(assignments.keys())
+        if not unassigned_vars:
+            return True, assignments
+
+        var = min(unassigned_vars)  # Simple heuristic
+
+        # Try True first
+        assignments_true = copy.deepcopy(assignments)
+        assignments_true[var] = True
+        assignment_true = Assignment(var, True, level + 1)
+
+        decide_true_before = copy.deepcopy(assignments)
+        step = SolverStep(
+            step_number=self.step_counter,
+            decision_type=DecisionType.DECIDE,
+            assignment=assignment_true,
+            clause=None,
+            assignments_before=decide_true_before,
+            assignments_after=copy.deepcopy(assignments_true),
+            decision_level=level + 1,
+            explanation=f"Decision: try {var} = True at level {level + 1}"
+        )
+        self.trace.add_step(step)
+        self.step_counter += 1
+
+        sat, solution = self._dpll_recursive(clauses, assignments_true, level + 1)
+        if sat:
+            return True, solution
+
+        # Emit a backtrack step to lower decision level before trying the opposite branch
+        prev_after = copy.deepcopy(self.trace.steps[-1].assignments_after) if self.trace.steps else copy.deepcopy(assignments_true)
+        backtrack_after = copy.deepcopy(assignments)  # revert to state before branching
+        backtrack_step = SolverStep(
+            step_number=self.step_counter,
+            decision_type=DecisionType.BACKTRACK,
+            assignment=None,
+            clause=None,
+            assignments_before=prev_after,
+            assignments_after=backtrack_after,
+            decision_level=level,
+            explanation=f"Backtrack to level {level} before exploring {var} = False"
+        )
+        self.trace.add_step(backtrack_step)
+        self.step_counter += 1
+
+        # Try False - new decision at the same next level
+        assignments_false = copy.deepcopy(assignments)
+        assignments_false[var] = False
+        assignment_false = Assignment(var, False, level + 1)
+
+        decide_false_before = copy.deepcopy(assignments)
+        step = SolverStep(
+            step_number=self.step_counter,
+            decision_type=DecisionType.DECIDE,
+            assignment=assignment_false,
+            clause=None,
+            assignments_before=decide_false_before,
+            assignments_after=copy.deepcopy(assignments_false),
+            decision_level=level + 1,
+            explanation=f"Backtrack and try {var} = False at level {level + 1}"
+        )
+        self.trace.add_step(step)
+        self.step_counter += 1
+
+        return self._dpll_recursive(clauses, assignments_false, level + 1)
+
+    def solve(self) -> bool:
+        sat, solution = self._dpll_recursive(self.instance.clauses, {}, 0)
+        self.trace.final_result = sat
+        self.trace.final_assignment = solution
+        return sat
+
     def get_trace(self) -> SolverTrace:
         return self.trace

@@ -64,7 +64,7 @@ python main.py generate --num-instances 100 --output-dir test_dataset
 
 ### Complete Pipeline
 ```bash
-python main.py pipeline --num-instances 1000 --formats huggingface csv --processes 4
+python main.py pipeline --num-instances 1000 --formats huggingface csv
 ```
 
 ## 📖 Usage Examples
@@ -84,12 +84,11 @@ config = DatasetConfig(
         ProblemType.SCHEDULING: 0.1
     },
     solver_types=["DPLL"],
-    max_solve_time_seconds=120,
-    num_processes=8
+    max_solve_time_seconds=120
 )
 
 generator = DatasetGenerator(config)
-dataset = generator.generate_dataset_parallel()
+dataset = generator.generate_dataset_sequential()
 generator.save_dataset(dataset, "json")
 ```
 
@@ -117,7 +116,7 @@ sat-rl-environment/
 │   │   ├── sat_generator.py      # SAT problem instance generation
 │   │   └── sat_solver.py         # DPLL solver implementation  
 │   ├── dataset/
-│   │   ├── generator.py          # Large-scale parallel dataset creation
+│   │   ├── generator.py          # Dataset creation
 │   │   ├── validator.py          # Quality assurance and validation
 │   │   └── exporter.py           # Multi-format export functionality
 │   └── formatting/
