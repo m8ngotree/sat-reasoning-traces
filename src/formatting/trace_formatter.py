@@ -123,7 +123,7 @@ class TraceFormatter:
         # Final result
         formatted_trace += "## Final Result\n"
         if trace.final_result is True:
-            formatted_trace += "✅ **SATISFIABLE**: A satisfying assignment was found!\n\n"
+            formatted_trace += "**SATISFIABLE**: A satisfying assignment was found!\n\n"
             if trace.final_assignment:
                 assigned_vars = sorted(trace.final_assignment.keys())
                 if len(assigned_vars) <= 20:
@@ -137,13 +137,13 @@ class TraceFormatter:
             formatted_trace += "the Boolean formula is satisfiable.\n"
         
         elif trace.final_result is False:
-            formatted_trace += "❌ **UNSATISFIABLE**: No satisfying assignment exists.\n\n"
+            formatted_trace += "**UNSATISFIABLE**: No satisfying assignment exists.\n\n"
             formatted_trace += "The solver has exhaustively explored all possible variable assignments "
             formatted_trace += "and determined that no assignment can make all clauses true simultaneously. "
             formatted_trace += "This proves the Boolean formula is unsatisfiable.\n"
         
         else:
-            formatted_trace += "⚠️ **UNKNOWN**: The solving process was incomplete.\n"
+            formatted_trace += "**UNKNOWN**: The solving process was incomplete.\n"
         
         # Summary statistics
         formatted_trace += f"\n## Solving Statistics\n"

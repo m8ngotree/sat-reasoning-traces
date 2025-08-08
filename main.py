@@ -224,8 +224,8 @@ Examples:
     gen_parser = subparsers.add_parser('generate', help='Generate dataset')
     gen_parser.add_argument('--num-instances', type=int, default=1000,
                            help='Number of instances to generate (default: 1000)')
-    gen_parser.add_argument('--min-vars', type=int, default=5,
-                           help='Minimum number of variables (default: 5)')
+    gen_parser.add_argument('--min-vars', type=int, default=6,
+                           help='Minimum number of variables (default: 6)')
     gen_parser.add_argument('--max-vars', type=int, default=10,
                            help='Maximum number of variables (default: 10)')
     gen_parser.add_argument('--timeout', type=int, default=300,
@@ -264,8 +264,8 @@ Examples:
     pip_parser = subparsers.add_parser('pipeline', help='Complete pipeline: generate, validate, export')
     pip_parser.add_argument('--num-instances', type=int, default=1000,
                            help='Number of instances to generate (default: 1000)')
-    pip_parser.add_argument('--min-vars', type=int, default=5,
-                           help='Minimum number of variables (default: 5)')
+    pip_parser.add_argument('--min-vars', type=int, default=6,
+                           help='Minimum number of variables (default: 6)')
     pip_parser.add_argument('--max-vars', type=int, default=10,
                            help='Maximum number of variables (default: 10)')
     pip_parser.add_argument('--timeout', type=int, default=300,
@@ -306,22 +306,22 @@ Examples:
     
     elif args.command == 'generate':
         dataset, saved_file = generate_dataset(args)
-        print(f"\n✅ Dataset generation complete! Saved to: {saved_file}")
+        print(f"\nDataset generation complete! Saved to: {saved_file}")
     
     elif args.command == 'validate':
         if not args.dataset_file.exists():
-            print(f"❌ Dataset file not found: {args.dataset_file}")
+            print(f"Dataset file not found: {args.dataset_file}")
             return
         
         result = validate_dataset(args.dataset_file)
         if result.is_valid:
-            print(f"\n✅ Dataset validation passed!")
+            print(f"\nDataset validation passed!")
         else:
-            print(f"\n❌ Dataset validation failed with {len(result.errors)} errors")
+            print(f"\nDataset validation failed with {len(result.errors)} errors")
     
     elif args.command == 'export':
         if not args.dataset_file.exists():
-            print(f"❌ Dataset file not found: {args.dataset_file}")
+            print(f"Dataset file not found: {args.dataset_file}")
             return
         
         import json
@@ -329,28 +329,28 @@ Examples:
             dataset = json.load(f)
         
         exported_files = export_dataset(dataset, args)
-        print(f"\n✅ Dataset export complete! {len(exported_files)} formats exported")
+        print(f"\nDataset export complete! {len(exported_files)} formats exported")
     
     elif args.command == 'pipeline':
         print("Starting complete SAT reasoning dataset pipeline...")
         
         # Step 1: Generate dataset
-        print("\n📊 Step 1: Generating dataset...")
+        print("\nStep 1: Generating dataset...")
         dataset, dataset_file = generate_dataset(args)
         
         # Step 2: Validate dataset
-        print("\n🔍 Step 2: Validating dataset...")
+        print("\nStep 2: Validating dataset...")
         validation_result = validate_dataset(Path(dataset_file))
         
         if not validation_result.is_valid:
-            print("⚠️ Dataset validation failed, but continuing with export...")
+            print("Dataset validation failed, but continuing with export...")
         
         # Step 3: Export dataset
-        print("\n📤 Step 3: Exporting dataset...")
+        print("\nStep 3: Exporting dataset...")
         exported_files = export_dataset(dataset, args)
         
         print("\n" + "=" * 60)
-        print("🎉 PIPELINE COMPLETE!")
+        print("PIPELINE COMPLETE!")
         print("=" * 60)
         print(f"Dataset: {dataset_file}")
         print(f"Exports: {list(exported_files.values())}")

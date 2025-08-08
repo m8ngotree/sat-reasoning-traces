@@ -494,7 +494,7 @@ class DatasetValidator:
         report = "# Dataset Validation Report\n\n"
         
         # Overall status
-        status = "✅ VALID" if result.is_valid else "❌ INVALID"
+        status = "VALID" if result.is_valid else "INVALID"
         report += f"**Overall Status**: {status}\n\n"
         
         # Statistics

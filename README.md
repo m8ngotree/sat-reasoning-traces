@@ -107,7 +107,7 @@ exporter = DatasetExporter()
 exported_files = exporter.export_all_formats(dataset)
 ```
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 sat-rl-environment/
@@ -160,7 +160,7 @@ sat_dataset/
 - Provide worked solutions for complex problems
 - Demonstrate algorithmic thinking patterns
 
-## 📊 Dataset Statistics
+## Dataset Statistics
 
 A typical dataset contains:
 - **Problem Diversity**: 4 different SAT problem types
@@ -169,7 +169,7 @@ A typical dataset contains:
 - **Trace Quality**: 500-5000 character natural language explanations
 - **Success Rate**: >95% valid instances after quality filtering
 
-## 🔍 Validation Features
+## Validation Features
 
 - **Structure Validation**: JSON schema compliance
 - **Logic Validation**: SAT problem correctness and solver trace consistency  
@@ -195,7 +195,7 @@ Step 2: Unit propagation forces variable x3 = false. This assignment is
 required because clause 'x3 ∨ ¬x7 ∨ x12' becomes a unit clause...
 
 ## Final Result
-✅ **SATISFIABLE**: A satisfying assignment was found!
+**SATISFIABLE**: A satisfying assignment was found!
 **Satisfying assignment**: {x1=true, x2=false, x3=false, ...}
 ```
 
