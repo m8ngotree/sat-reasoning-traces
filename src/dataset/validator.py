@@ -28,7 +28,7 @@ class DatasetValidator:
             "required": ["instance_id", "problem", "reasoning_trace", "solution", "step_by_step", "solver_type"],
             "properties": {
                 "instance_id": {"type": "integer"},
-                "solver_type": {"type": "string", "enum": ["CDCL", "DPLL"]},
+                "solver_type": {"type": "string", "enum": ["DPLL"]},
                 "generation_seed": {"type": "integer"},
                 "problem": {
                     "type": "object",
@@ -156,12 +156,25 @@ class DatasetValidator:
             # Check for reasonable solving statistics
             decisions = sum(1 for step in steps if step.get("decision_type") == "decide")
             conflicts = sum(1 for step in steps if step.get("decision_type") == "conflict")
+            propagations = sum(1 for step in steps if step.get("decision_type") == "propagate")
+            backtracks = sum(1 for step in steps if step.get("decision_type") == "backtrack")
             
+            # More sophisticated checks
             if satisfiable is False and conflicts == 0:
-                warnings.append("Unsatisfiable instance with no conflicts recorded - unusual")
+                warnings.append("Unsatisfiable instance with no conflicts recorded - may indicate solver implementation issues")
+            
+            if satisfiable is False and backtracks == 0 and conflicts > 0:
+                warnings.append("Unsatisfiable instance with conflicts but no backtracking - unusual")
             
             if decisions > num_variables * 3:
-                warnings.append(f"Very high number of decisions ({decisions}) for {num_variables} variables")
+                warnings.append(f"Very high number of decisions ({decisions}) for {num_variables} variables - may indicate inefficient solving")
+            
+            if propagations == 0 and len(steps) > 1:
+                warnings.append("No unit propagation steps found - unusual for modern SAT solvers")
+            
+            # Check decision/conflict ratio
+            if conflicts > 0 and decisions / conflicts > 10:
+                warnings.append(f"High decision-to-conflict ratio ({decisions}/{conflicts}) - may indicate poor conflict analysis")
             
         except Exception as e:
             errors.append(f"Error during SAT logic validation: {str(e)}")
@@ -169,7 +182,9 @@ class DatasetValidator:
         statistics = {
             "max_variable": max_var_in_clauses if 'max_var_in_clauses' in locals() else 0,
             "decision_steps": decisions if 'decisions' in locals() else 0,
-            "conflict_steps": conflicts if 'conflicts' in locals() else 0
+            "conflict_steps": conflicts if 'conflicts' in locals() else 0,
+            "propagation_steps": propagations if 'propagations' in locals() else 0,
+            "backtrack_steps": backtracks if 'backtracks' in locals() else 0
         }
         
         is_valid = len(errors) == 0
@@ -178,8 +193,8 @@ class DatasetValidator:
     def _extract_variables_from_clause(self, clause_str: str) -> Set[int]:
         """Extract variable numbers from a clause string"""
         variables = set()
-        # Simple parsing - look for x followed by numbers
-        tokens = clause_str.replace("¬", "").replace("∨", "").replace("x", " ").split()
+        # Handle Unicode characters
+        tokens = clause_str.replace("¬", "").replace("¬", "").replace("∨", "").replace("∨", "").replace("x", " ").split()
         for token in tokens:
             try:
                 var = int(token.strip())
@@ -209,20 +224,19 @@ class DatasetValidator:
     
     def _is_clause_satisfied(self, clause_str: str, assignment: Dict[int, bool]) -> bool:
         """Check if a single clause is satisfied by an assignment"""
-        # Parse clause - this is a simplified parser
-        # Look for patterns like "x1", "¬x2", etc.
+        # Parse clause handling Unicode characters
         
-        # Split by disjunction symbol
-        literals = clause_str.split("∨")
+        # Split by disjunction symbols (both ∨ and ∨)
+        literals = clause_str.replace("∨", "∨").split("∨")
         
         for literal in literals:
             literal = literal.strip()
             
-            # Check if negated
-            negated = "¬" in literal
+            # Check if negated (handle Unicode ¬)
+            negated = "¬" in literal or "¬" in literal
             
-            # Extract variable number
-            var_part = literal.replace("¬", "").replace("x", "").strip()
+            # Extract variable number - handle Unicode
+            var_part = literal.replace("¬", "").replace("¬", "").replace("x", "").strip()
             try:
                 var_num = int(var_part)
                 if var_num in assignment:
@@ -236,42 +250,70 @@ class DatasetValidator:
         return False  # No literal satisfied the clause
     
     def _validate_solver_trace(self, steps: List[Dict[str, Any]], num_variables: int) -> List[str]:
-        """Validate the consistency of the solver trace"""
+        """Validate the consistency of the solver trace with improved checks"""
         errors = []
         
         if not steps:
             errors.append("Empty solver trace")
             return errors
         
-        # Check step numbering
-        expected_step = 0
-        for i, step in enumerate(steps):
-            if step.get("step_number", -1) != expected_step:
-                errors.append(f"Step {i}: Expected step number {expected_step}, got {step.get('step_number')}")
-            expected_step += 1
+        # Track state for consistency checking
+        current_assignments = {}
+        current_decision_level = 0
+        decision_count = 0
+        conflict_count = 0
+        propagation_count = 0
         
-        # Check decision levels are reasonable (more lenient validation)
-        max_level_seen = 0
+        # Check step numbering and trace consistency
         for i, step in enumerate(steps):
-            current_level = step.get("decision_level", 0)
             decision_type = step.get("decision_type", "")
-            
-            # Update max level seen
-            if decision_type == "decide":
-                max_level_seen = max(max_level_seen, current_level)
-            
-            # Only check for obviously wrong levels
-            if current_level < 0:
-                errors.append(f"Step {i}: Negative decision level {current_level}")
-            elif current_level > num_variables + 10:  # Allow some buffer
-                errors.append(f"Step {i}: Decision level {current_level} too high for {num_variables} variables")
-        
-        # Check assignment consistency
-        for i, step in enumerate(steps):
+            step_level = step.get("decision_level", 0)
             assignments_before = step.get("assignments_before", {})
             assignments_after = step.get("assignments_after", {})
             
-            # Validate variable bounds
+            # Validate step number
+            if step.get("step_number", -1) != i:
+                errors.append(f"Step {i}: Expected step number {i}, got {step.get('step_number')}")
+            
+            # Validate decision type
+            if decision_type not in ["decide", "propagate", "conflict", "backtrack", "restart"]:
+                errors.append(f"Step {i}: Invalid decision type '{decision_type}'")
+                continue
+            
+            # Count step types
+            if decision_type == "decide":
+                decision_count += 1
+            elif decision_type == "conflict":
+                conflict_count += 1
+            elif decision_type == "propagate":
+                propagation_count += 1
+            
+            # Validate decision level consistency
+            if decision_type == "decide":
+                if step_level != current_decision_level + 1:
+                    errors.append(f"Step {i}: Decision should increment level to {current_decision_level + 1}, got {step_level}")
+                current_decision_level = step_level
+            elif decision_type == "backtrack":
+                if step_level >= current_decision_level:
+                    errors.append(f"Step {i}: Backtrack should decrease level below {current_decision_level}, got {step_level}")
+                current_decision_level = step_level
+            elif decision_type == "propagate":
+                if step_level != current_decision_level:
+                    errors.append(f"Step {i}: Propagation should be at current level {current_decision_level}, got {step_level}")
+            
+            # Validate assignment consistency
+            if i == 0:
+                # First step should have empty assignments_before
+                if assignments_before:
+                    errors.append(f"Step {i}: First step should have empty assignments_before")
+            else:
+                # Check that assignments_before matches previous step's assignments_after
+                prev_step = steps[i-1]
+                prev_assignments_after = prev_step.get("assignments_after", {})
+                if assignments_before != prev_assignments_after:
+                    errors.append(f"Step {i}: assignments_before doesn't match previous step's assignments_after")
+            
+            # Validate variable bounds in assignments
             for var_str in list(assignments_before.keys()) + list(assignments_after.keys()):
                 try:
                     var = int(var_str)
@@ -279,6 +321,35 @@ class DatasetValidator:
                         errors.append(f"Step {i}: Variable {var} out of bounds (1-{num_variables})")
                 except ValueError:
                     errors.append(f"Step {i}: Invalid variable identifier '{var_str}'")
+            
+            # For decision steps, check that exactly one variable is assigned
+            if decision_type == "decide":
+                diff_vars = set(assignments_after.keys()) - set(assignments_before.keys())
+                if len(diff_vars) != 1:
+                    errors.append(f"Step {i}: Decision should assign exactly one variable, assigned {len(diff_vars)}")
+            
+            # For propagation, check that assignment is justified
+            elif decision_type == "propagate":
+                diff_vars = set(assignments_after.keys()) - set(assignments_before.keys())
+                if len(diff_vars) != 1:
+                    errors.append(f"Step {i}: Propagation should assign exactly one variable, assigned {len(diff_vars)}")
+                
+                # Check that a clause is provided as justification
+                if not step.get("clause"):
+                    errors.append(f"Step {i}: Propagation step missing justifying clause")
+            
+            # Update current state
+            current_assignments = dict(assignments_after)
+        
+        # Validate overall trace statistics
+        if decision_count > num_variables * 2:  # Allow some flexibility but catch obvious issues
+            errors.append(f"Excessive decisions: {decision_count} for {num_variables} variables")
+        
+        # Check that unsatisfiable instances have conflicts
+        has_final_result = len(steps) > 0 and steps[-1].get("decision_type") in ["conflict", "backtrack"]
+        if conflict_count == 0 and not has_final_result:
+            # This will be flagged as a warning in the main validation, not an error
+            pass
         
         return errors
     

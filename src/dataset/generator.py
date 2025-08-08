@@ -10,7 +10,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import pickle
 
 from src.core.sat_generator import SATGenerator, ProblemType, SATInstance
-from src.core.sat_solver import CDCLSolver, DPLLSolver, SolverTrace
+from src.core.sat_solver import DPLLSolver, SolverTrace
 from src.formatting.trace_formatter import TraceFormatter
 
 
@@ -36,7 +36,7 @@ class DatasetConfig:
             }
         
         if self.solver_types is None:
-            self.solver_types = ["CDCL", "DPLL"]
+            self.solver_types = ["DPLL"]  # Only DPLL is supported
         
         if self.num_processes is None:
             self.num_processes = min(mp.cpu_count(), 8)
@@ -148,12 +148,10 @@ class DatasetGenerator:
         try:
             start_time = time.time()
             
-            if solver_type == "CDCL":
-                solver = CDCLSolver(instance)
-            elif solver_type == "DPLL":
+            if solver_type == "DPLL":
                 solver = DPLLSolver(instance)
             else:
-                raise ValueError(f"Unknown solver type: {solver_type}")
+                raise ValueError(f"Unknown solver type: {solver_type} (only DPLL is supported)")
             
             # Simple timeout mechanism (for more complex cases, you might want to use signals)
             result = solver.solve()
@@ -345,7 +343,7 @@ if __name__ == "__main__":
             ProblemType.GRAPH_COLORING: 0.15,
             ProblemType.SCHEDULING: 0.15
         },
-        solver_types=["CDCL", "DPLL"],
+        solver_types=["DPLL"],
         max_solve_time_seconds=60,
         include_unsatisfiable=True,
         output_directory="sat_reasoning_dataset",

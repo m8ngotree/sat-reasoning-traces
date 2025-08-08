@@ -6,7 +6,7 @@ A comprehensive system for building large-scale synthetic datasets of detailed r
 
 This project generates high-quality training data by:
 - Creating diverse SAT problem instances (Random 3-SAT, Pigeonhole Principle, Graph Coloring, Scheduling)  
-- Solving them with detailed step-by-step traces using CDCL and DPLL algorithms
+- Solving them with detailed step-by-step traces using the DPLL algorithm
 - Converting solver traces into natural language reasoning explanations
 - Exporting datasets in multiple ML-friendly formats (HuggingFace, OpenAI, Alpaca, etc.)
 - Providing comprehensive validation and quality assurance
@@ -19,10 +19,9 @@ This project generates high-quality training data by:
 - **Graph Coloring**: NP-complete problems with real-world relevance  
 - **Scheduling**: Resource allocation problems with conflict constraints
 
-### Solver Algorithms
-- **CDCL (Conflict-Driven Clause Learning)**: Modern SAT solving with backtracking
-- **DPLL (Davis-Putnam-Logemann-Loveland)**: Classic recursive algorithm
-- Both solvers generate detailed step-by-step execution traces
+### Solver Algorithm
+- **DPLL (Davis-Putnam-Logemann-Loveland)**: Classic recursive algorithm with backtracking
+- Generates detailed step-by-step execution traces for educational purposes
 
 ### Natural Language Generation
 - Converts solver steps into human-readable explanations
@@ -84,7 +83,7 @@ config = DatasetConfig(
         ProblemType.GRAPH_COLORING: 0.2,  
         ProblemType.SCHEDULING: 0.1
     },
-    solver_types=["CDCL"],
+    solver_types=["DPLL"],
     max_solve_time_seconds=120,
     num_processes=8
 )
@@ -116,7 +115,7 @@ sat-rl-environment/
 ├── src/
 │   ├── core/
 │   │   ├── sat_generator.py      # SAT problem instance generation
-│   │   └── sat_solver.py         # CDCL and DPLL solver implementations  
+│   │   └── sat_solver.py         # DPLL solver implementation  
 │   ├── dataset/
 │   │   ├── generator.py          # Large-scale parallel dataset creation
 │   │   ├── validator.py          # Quality assurance and validation
@@ -167,7 +166,7 @@ sat_dataset/
 A typical dataset contains:
 - **Problem Diversity**: 4 different SAT problem types
 - **Size Range**: 10-50 variables, 20-300 clauses per instance
-- **Solver Coverage**: Both CDCL and DPLL algorithm traces
+- **Solver Coverage**: DPLL algorithm traces with educational explanations
 - **Trace Quality**: 500-5000 character natural language explanations
 - **Success Rate**: >95% valid instances after quality filtering
 
@@ -215,6 +214,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- SAT solving algorithms based on modern CDCL and classic DPLL techniques
+- SAT solving algorithm based on the classic DPLL technique
 - Inspired by the need for high-quality logical reasoning training data
 - Built for the machine learning and automated reasoning communities

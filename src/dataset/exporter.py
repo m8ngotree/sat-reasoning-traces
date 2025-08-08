@@ -84,7 +84,7 @@ class DatasetExporter:
                 "num_variables": "Number of boolean variables in the problem",
                 "num_clauses": "Number of clauses in the SAT formula",
                 "satisfiable": "Whether the problem is satisfiable (boolean)",
-                "solver_type": "SAT solver used (CDCL or DPLL)",
+                "solver_type": "SAT solver used (DPLL only)",
                 "steps_taken": "Number of solver steps",
                 "conflicts": "Number of conflicts encountered",
                 "decisions": "Number of decision points"
@@ -223,7 +223,7 @@ class DatasetExporter:
                 instance["solution"]["steps_taken"],
                 instance["solution"]["conflicts_encountered"],
                 instance["solution"]["decisions_made"],
-                1 if instance["solver_type"] == "CDCL" else 0,  # solver type encoding
+                1,  # solver type encoding (always DPLL)
                 hash(instance["problem"]["type"]) % 1000,  # problem type hash
             ]
             

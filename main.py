@@ -14,7 +14,7 @@ import logging
 from typing import Dict, Any
 
 from src.core.sat_generator import SATGenerator, ProblemType
-from src.core.sat_solver import CDCLSolver, DPLLSolver
+from src.core.sat_solver import DPLLSolver
 from src.formatting.trace_formatter import TraceFormatter
 from src.dataset.generator import DatasetGenerator, DatasetConfig
 from src.dataset.validator import DatasetValidator
@@ -54,9 +54,9 @@ def generate_sample_instance():
     for i, clause in enumerate(instance.clauses[:5]):
         print(f"  {i+1}. {clause}")
     
-    # Solve with CDCL
-    print(f"\nSolving with CDCL solver...")
-    solver = CDCLSolver(instance)
+    # Solve with DPLL
+    print(f"\nSolving with DPLL solver...")
+    solver = DPLLSolver(instance)
     result = solver.solve()
     trace = solver.get_trace()
     
@@ -92,7 +92,7 @@ def generate_dataset(args):
             ProblemType.GRAPH_COLORING: 0.2,
             ProblemType.SCHEDULING: 0.15
         },
-        solver_types=["CDCL", "DPLL"],
+        solver_types=args.solver_types,
         max_solve_time_seconds=args.timeout,
         include_unsatisfiable=True,
         output_directory=args.output_dir,
@@ -229,6 +229,9 @@ Examples:
                            help='Output directory (default: sat_dataset)')
     gen_parser.add_argument('--verbose', action='store_true',
                            help='Enable verbose logging')
+    gen_parser.add_argument('--solver-types', nargs='+', default=['DPLL'],
+                           choices=['DPLL'], 
+                           help='Solver types to use (default: DPLL only)')
     
     # Validate command
     val_parser = subparsers.add_parser('validate', help='Validate dataset')
