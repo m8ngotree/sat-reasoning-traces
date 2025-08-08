@@ -2,6 +2,7 @@ from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass, field
 from enum import Enum
 import copy
+import time
 from .sat_generator import SATInstance, Clause
 
 
@@ -75,13 +76,19 @@ class SolverTrace:
 
 
 class DPLLSolver:
-    def __init__(self, instance: SATInstance):
+    def __init__(self, instance: SATInstance, time_limit_seconds: Optional[float] = None):
         self.instance = instance
         self.trace = SolverTrace(instance)
         self.step_counter = 0
+        self._time_limit_seconds = time_limit_seconds
+        self._start_time: Optional[float] = None
 
     def _dpll_recursive(self, clauses: List[Clause], assignments: Dict[int, bool], 
                        level: int) -> Tuple[bool, Optional[Dict[int, bool]]]:
+        # Preemptive timeout check
+        if self._time_limit_seconds is not None and self._start_time is not None:
+            if time.time() - self._start_time > self._time_limit_seconds:
+                raise TimeoutError("Solver time limit exceeded")
         assignments_before = copy.deepcopy(assignments)
 
         # Simplify clauses based on current assignments
@@ -169,14 +176,20 @@ class DPLLSolver:
             if not unit_candidates:
                 break
 
-            # Apply exactly one unit propagation per loop iteration
-            clause = unit_candidates[0]
-            lit = clause.literals[0]
-            var = abs(lit)
-            value = lit > 0
-            if var in assignments:
-                # Already assigned; skip and continue
+            # Pick the first unit clause whose variable is unassigned
+            selected = None
+            for uc in unit_candidates:
+                lit = uc.literals[0]
+                var = abs(lit)
+                if var not in assignments:
+                    selected = (uc, var, lit > 0)
+                    break
+
+            if selected is None:
+                # No applicable unit clauses remain
                 break
+
+            clause, var, value = selected
             assignments_before = copy.deepcopy(assignments)
             assignments[var] = value
             assignment = Assignment(var, value, level, clause)
@@ -261,6 +274,7 @@ class DPLLSolver:
         return self._dpll_recursive(clauses, assignments_false, level + 1)
 
     def solve(self) -> bool:
+        self._start_time = time.time()
         sat, solution = self._dpll_recursive(self.instance.clauses, {}, 0)
         self.trace.final_result = sat
         self.trace.final_assignment = solution

@@ -37,14 +37,13 @@ class SATInstance:
 
 class SATGenerator:
     def __init__(self, seed: Optional[int] = None):
-        if seed is not None:
-            random.seed(seed)
+        self._rng = random.Random(seed) if seed is not None else random
     
     def generate_random_3sat(self, num_variables: int, num_clauses: int) -> SATInstance:
         clauses = []
         for _ in range(num_clauses):
-            variables = random.sample(range(1, num_variables + 1), 3)
-            literals = [var if random.choice([True, False]) else -var for var in variables]
+            variables = self._rng.sample(range(1, num_variables + 1), 3)
+            literals = [var if self._rng.choice([True, False]) else -var for var in variables]
             clauses.append(Clause(literals))
         
         return SATInstance(
@@ -163,34 +162,34 @@ class SATGenerator:
         instances = []
         
         for i in range(count):
-            problem_type = random.choice(list(ProblemType))
+            problem_type = self._rng.choice(list(ProblemType))
             
             if problem_type == ProblemType.RANDOM_3SAT:
-                num_vars = random.randint(10, 50)
-                num_clauses = random.randint(int(2 * num_vars), int(6 * num_vars))
+                num_vars = self._rng.randint(10, 50)
+                num_clauses = self._rng.randint(int(2 * num_vars), int(6 * num_vars))
                 instance = self.generate_random_3sat(num_vars, num_clauses)
             
             elif problem_type == ProblemType.PIGEONHOLE:
-                num_holes = random.randint(3, 8)
-                num_pigeons = num_holes + random.randint(1, 3)
+                num_holes = self._rng.randint(3, 8)
+                num_pigeons = num_holes + self._rng.randint(1, 3)
                 instance = self.generate_pigeonhole_principle(num_pigeons, num_holes)
             
             elif problem_type == ProblemType.GRAPH_COLORING:
-                num_vertices = random.randint(5, 15)
-                edge_prob = random.uniform(0.2, 0.7)
+                num_vertices = self._rng.randint(5, 15)
+                edge_prob = self._rng.uniform(0.2, 0.7)
                 edges = [(i, j) for i in range(num_vertices) 
                         for j in range(i + 1, num_vertices)
-                        if random.random() < edge_prob]
-                num_colors = random.randint(2, num_vertices // 2)
+                        if self._rng.random() < edge_prob]
+                num_colors = self._rng.randint(2, num_vertices // 2)
                 instance = self.generate_graph_coloring(num_vertices, edges, num_colors)
             
             elif problem_type == ProblemType.SCHEDULING:
-                num_jobs = random.randint(5, 20)
-                num_slots = random.randint(2, num_jobs // 2)
-                conflict_prob = random.uniform(0.1, 0.4)
+                num_jobs = self._rng.randint(5, 20)
+                num_slots = self._rng.randint(2, num_jobs // 2)
+                conflict_prob = self._rng.uniform(0.1, 0.4)
                 conflicts = [(i, j) for i in range(num_jobs)
                            for j in range(i + 1, num_jobs)
-                           if random.random() < conflict_prob]
+                           if self._rng.random() < conflict_prob]
                 instance = self.generate_scheduling_problem(num_jobs, num_slots, conflicts)
             
             instances.append(instance)

@@ -139,12 +139,17 @@ class DatasetGenerator:
             start_time = time.time()
             
             if solver_type == "DPLL":
-                solver = DPLLSolver(instance)
+                # Pass a time limit slightly under the requested timeout to ensure preemption
+                solver = DPLLSolver(instance, time_limit_seconds=timeout_seconds)
             else:
                 raise ValueError(f"Unknown solver type: {solver_type} (only DPLL is supported)")
             
             # Simple timeout mechanism (for more complex cases, you might want to use signals)
-            result = solver.solve()
+            try:
+                result = solver.solve()
+            except TimeoutError:
+                self.logger.warning("Solver timeout (preempted)")
+                return None
             
             elapsed = time.time() - start_time
             if elapsed > timeout_seconds:

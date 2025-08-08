@@ -42,7 +42,7 @@ This project generates high-quality training data by:
 - Reasoning quality assessment
 - Statistical analysis and reporting
 
-## 📦 Installation
+## Installation
 
 ```bash
 git clone https://github.com/yourusername/sat-rl-environment.git
@@ -50,7 +50,7 @@ cd sat-rl-environment
 pip install -r requirements.txt
 ```
 
-## 🔧 Quick Start
+## Quick Start
 
 ### Generate a Sample Instance
 ```bash
@@ -67,7 +67,7 @@ python main.py generate --num-instances 100 --output-dir test_dataset
 python main.py pipeline --num-instances 1000 --formats huggingface csv
 ```
 
-## 📖 Usage Examples
+## Usage Examples
 
 ### Custom Dataset Generation
 ```python
@@ -125,7 +125,7 @@ sat-rl-environment/
 └── requirements.txt             # Dependencies
 ```
 
-## 📁 Output Structure
+## Output Structure
 
 Generated datasets are organized in run-specific directories:
 
@@ -140,7 +140,7 @@ sat_dataset/
 └── ...
 ```
 
-## 🎯 Use Cases
+## Use Cases
 
 ### Large Language Model Training
 - Fine-tune models on logical reasoning tasks
@@ -176,7 +176,7 @@ A typical dataset contains:
 - **Quality Assessment**: Natural language explanation completeness
 - **Statistical Analysis**: Distribution balance and complexity metrics
 
-## 🌟 Example Output
+## Example Output
 
 ```
 # SAT Solving Reasoning Trace

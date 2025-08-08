@@ -196,23 +196,22 @@ def main():
         description="Generate large-scale SAT reasoning datasets for LLM training",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  # Generate a small dataset for testing
-  python main.py generate --num-instances 100 --output-dir test_dataset
-  
-  # Generate large dataset with specific parameters
-  python main.py generate --num-instances 10000 --min-vars 10 --max-vars 50 \\
-                          --processes 8 --timeout 120
-  
-  # Validate an existing dataset
-  python main.py validate --dataset-file dataset.json
-  
-  # Export dataset in multiple formats
-  python main.py export --dataset-file dataset.json --formats huggingface openai
-  
-  # Complete pipeline: generate, validate, and export
-  python main.py pipeline --num-instances 1000 --formats huggingface csv
-        """
+ Examples:
+   # Generate a small dataset for testing
+   python main.py generate --num-instances 100 --output-dir test_dataset
+   
+   # Generate large dataset with specific parameters
+   python main.py generate --num-instances 10000 --min-vars 10 --max-vars 50 --timeout 120
+   
+   # Validate an existing dataset
+   python main.py validate --dataset-file dataset.json
+   
+   # Export dataset in multiple formats
+   python main.py export --dataset-file dataset.json --formats huggingface openai
+   
+   # Complete pipeline: generate, validate, and export
+   python main.py pipeline --num-instances 1000 --formats huggingface csv
+         """
     )
     
     subparsers = parser.add_subparsers(dest='command', help='Available commands')

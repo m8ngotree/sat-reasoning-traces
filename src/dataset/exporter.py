@@ -315,8 +315,8 @@ class DatasetExporter:
             solutions_group.create_dataset("decisions", data=decisions)
             solutions_group.create_dataset("solver_types", data=[s.encode('utf-8') for s in solver_types])
             
-            # Variable length strings for traces
-            dt = h5py.special_dtype(vlen=str)
+            # Variable length strings for traces (modern dtype)
+            dt = h5py.string_dtype(encoding='utf-8')
             traces_group.create_dataset("reasoning_traces", data=[t.decode('utf-8') for t in reasoning_traces], dtype=dt)
             
             # Store metadata

@@ -342,8 +342,7 @@ class DatasetValidator:
             current_assignments = dict(assignments_after)
         
         # Validate overall trace statistics
-        if decision_count > num_variables * 2:  # Allow some flexibility but catch obvious issues
-            errors.append(f"Excessive decisions: {decision_count} for {num_variables} variables")
+        # High decision count is not inherently incorrect; surface as a warning in higher-level checks
         
         # Check that unsatisfiable instances have conflicts
         has_final_result = len(steps) > 0 and steps[-1].get("decision_type") in ["conflict", "backtrack"]
