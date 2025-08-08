@@ -103,13 +103,13 @@ def generate_dataset(args):
     print(f"Configuration:")
     print(f"- Target instances: {config.num_instances}")
     print(f"- Variable range: {config.max_variables_range}")
-    print(f"- Processes: {config.num_processes}")
+    print(f"- Processing: Sequential (no multiprocessing)")
     print(f"- Output directory: {config.output_directory}")
     print(f"- Random seed: {config.random_seed}")
     
     # Generate dataset
     generator = DatasetGenerator(config)
-    dataset = generator.generate_dataset_parallel()
+    dataset = generator.generate_dataset_sequential()
     
     # Save dataset
     saved_files = generator.save_dataset(dataset, "json")
@@ -215,14 +215,14 @@ Examples:
     gen_parser = subparsers.add_parser('generate', help='Generate dataset')
     gen_parser.add_argument('--num-instances', type=int, default=1000,
                            help='Number of instances to generate (default: 1000)')
-    gen_parser.add_argument('--min-vars', type=int, default=10,
-                           help='Minimum number of variables (default: 10)')
-    gen_parser.add_argument('--max-vars', type=int, default=50,
-                           help='Maximum number of variables (default: 50)')
+    gen_parser.add_argument('--min-vars', type=int, default=5,
+                           help='Minimum number of variables (default: 5)')
+    gen_parser.add_argument('--max-vars', type=int, default=10,
+                           help='Maximum number of variables (default: 10)')
     gen_parser.add_argument('--timeout', type=int, default=300,
                            help='Solver timeout in seconds (default: 300)')
-    gen_parser.add_argument('--processes', type=int, default=4,
-                           help='Number of parallel processes (default: 4)')
+    gen_parser.add_argument('--processes', type=int, default=1,
+                           help='Sequential processing only (default: 1)')
     gen_parser.add_argument('--seed', type=int, default=42,
                            help='Random seed for reproducibility (default: 42)')
     gen_parser.add_argument('--output-dir', default='sat_dataset',
@@ -257,14 +257,14 @@ Examples:
     pip_parser = subparsers.add_parser('pipeline', help='Complete pipeline: generate, validate, export')
     pip_parser.add_argument('--num-instances', type=int, default=1000,
                            help='Number of instances to generate (default: 1000)')
-    pip_parser.add_argument('--min-vars', type=int, default=10,
-                           help='Minimum number of variables (default: 10)')
-    pip_parser.add_argument('--max-vars', type=int, default=50,
-                           help='Maximum number of variables (default: 50)')
+    pip_parser.add_argument('--min-vars', type=int, default=5,
+                           help='Minimum number of variables (default: 5)')
+    pip_parser.add_argument('--max-vars', type=int, default=10,
+                           help='Maximum number of variables (default: 10)')
     pip_parser.add_argument('--timeout', type=int, default=300,
                            help='Solver timeout in seconds (default: 300)')
-    pip_parser.add_argument('--processes', type=int, default=4,
-                           help='Number of parallel processes (default: 4)')
+    pip_parser.add_argument('--processes', type=int, default=1,
+                           help='Sequential processing only (default: 1)')
     pip_parser.add_argument('--seed', type=int, default=42,
                            help='Random seed for reproducibility (default: 42)')
     pip_parser.add_argument('--output-dir', default='sat_dataset',
@@ -279,6 +279,9 @@ Examples:
                            help='Maximum length of reasoning traces')
     pip_parser.add_argument('--verbose', action='store_true',
                            help='Enable verbose logging')
+    pip_parser.add_argument('--solver-types', nargs='+', default=['DPLL'],
+                           choices=['DPLL'], 
+                           help='Solver types to use (default: DPLL only)')
     
     args = parser.parse_args()
     

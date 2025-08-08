@@ -1,12 +1,10 @@
 import json
 import random
-import multiprocessing as mp
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 import time
 from pathlib import Path
 import logging
-from concurrent.futures import ProcessPoolExecutor, as_completed
 import pickle
 
 from src.core.sat_generator import SATGenerator, ProblemType, SATInstance
@@ -17,7 +15,7 @@ from src.formatting.trace_formatter import TraceFormatter
 @dataclass
 class DatasetConfig:
     num_instances: int = 1000
-    max_variables_range: Tuple[int, int] = (10, 50)
+    max_variables_range: Tuple[int, int] = (5, 10)
     problem_type_distribution: Dict[ProblemType, float] = None
     solver_types: List[str] = None
     max_solve_time_seconds: int = 300
@@ -39,7 +37,7 @@ class DatasetConfig:
             self.solver_types = ["DPLL"]  # Only DPLL is supported
         
         if self.num_processes is None:
-            self.num_processes = min(mp.cpu_count(), 8)
+            self.num_processes = 1
 
 
 class DatasetGenerator:
@@ -49,15 +47,7 @@ class DatasetGenerator:
         self.output_dir = Path(config.output_directory)
         self.output_dir.mkdir(exist_ok=True)
         
-        # Set up logging
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(self.output_dir / 'generation.log'),
-                logging.StreamHandler()
-            ]
-        )
+        # Get logger (assumes logging is already configured)
         self.logger = logging.getLogger(__name__)
     
     def generate_single_instance_data(self, instance_id: int, seed: int) -> Optional[Dict[str, Any]]:
@@ -168,56 +158,38 @@ class DatasetGenerator:
             self.logger.error(f"Error solving instance: {str(e)}")
             return None
     
-    def generate_dataset_parallel(self) -> Dict[str, Any]:
-        """Generate the complete dataset using parallel processing"""
-        self.logger.info(f"Starting dataset generation with {self.config.num_processes} processes")
+    def generate_dataset_sequential(self) -> Dict[str, Any]:
+        """Generate dataset sequentially (simpler, no multiprocessing issues)"""
+        self.logger.info(f"Starting sequential dataset generation")
         self.logger.info(f"Target instances: {self.config.num_instances}")
         
         start_time = time.time()
         successful_instances = []
         failed_count = 0
         
-        # Generate seeds for reproducibility
         base_seed = self.config.random_seed
-        seeds = [base_seed + i for i in range(self.config.num_instances * 2)]  # Extra seeds in case some fail
         
-        with ProcessPoolExecutor(max_workers=self.config.num_processes) as executor:
-            # Submit all tasks
-            future_to_id = {
-                executor.submit(self.generate_single_instance_data, i, seeds[i]): i 
-                for i in range(min(len(seeds), self.config.num_instances * 2))
-            }
+        for i in range(self.config.num_instances):
+            seed = base_seed + i
+            result = self.generate_single_instance_data(i, seed)
             
-            # Collect results
-            for future in as_completed(future_to_id):
-                instance_id = future_to_id[future]
-                try:
-                    result = future.result()
-                    if result is not None:
-                        successful_instances.append(result)
-                        if len(successful_instances) % 100 == 0:
-                            self.logger.info(f"Generated {len(successful_instances)} instances...")
-                    else:
-                        failed_count += 1
-                    
-                    # Stop when we have enough successful instances
-                    if len(successful_instances) >= self.config.num_instances:
-                        break
-                        
-                except Exception as e:
-                    self.logger.error(f"Instance {instance_id} failed: {str(e)}")
-                    failed_count += 1
+            if result is not None:
+                successful_instances.append(result)
+                if len(successful_instances) % 10 == 0:
+                    self.logger.info(f"Generated {len(successful_instances)} instances...")
+            else:
+                failed_count += 1
         
         elapsed_time = time.time() - start_time
         
-        # Compile dataset statistics
+        # Same statistics compilation as parallel version...
         dataset_info = {
             "generation_config": {
                 "num_instances_requested": self.config.num_instances,
                 "num_instances_generated": len(successful_instances),
                 "num_failed": failed_count,
                 "generation_time_seconds": elapsed_time,
-                "processes_used": self.config.num_processes,
+                "processes_used": 1,  # Sequential
                 "random_seed": self.config.random_seed
             },
             "problem_type_stats": {},
@@ -269,7 +241,7 @@ class DatasetGenerator:
         if successful_instances:
             dataset_info["complexity_stats"]["avg_steps"] = total_steps / len(successful_instances)
         
-        self.logger.info(f"Dataset generation completed!")
+        self.logger.info(f"Sequential dataset generation completed!")
         self.logger.info(f"Generated {len(successful_instances)} successful instances")
         self.logger.info(f"Failed instances: {failed_count}")
         self.logger.info(f"Time elapsed: {elapsed_time:.2f} seconds")
@@ -278,6 +250,7 @@ class DatasetGenerator:
             "instances": successful_instances,
             "dataset_info": dataset_info
         }
+    
     
     def save_dataset(self, dataset: Dict[str, Any], format: str = "json"):
         """Save dataset to disk in specified format"""
@@ -315,7 +288,7 @@ class DatasetGenerator:
     
     def generate_and_save(self, save_formats: List[str] = ["json", "jsonl"]) -> List[Path]:
         """Complete dataset generation and saving pipeline"""
-        dataset = self.generate_dataset_parallel()
+        dataset = self.generate_dataset_sequential()
         
         saved_files = []
         for format in save_formats:
@@ -324,12 +297,6 @@ class DatasetGenerator:
         
         return saved_files
 
-
-def worker_function(args):
-    """Worker function for multiprocessing"""
-    instance_id, seed, config = args
-    generator = DatasetGenerator(config)
-    return generator.generate_single_instance_data(instance_id, seed)
 
 
 if __name__ == "__main__":
@@ -347,7 +314,6 @@ if __name__ == "__main__":
         max_solve_time_seconds=60,
         include_unsatisfiable=True,
         output_directory="sat_reasoning_dataset",
-        num_processes=4,
         random_seed=42
     )
     
