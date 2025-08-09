@@ -1,6 +1,7 @@
 import json
 import jsonschema
 from typing import List, Dict, Any, Set, Optional, Tuple
+import re
 from pathlib import Path
 import logging
 from dataclasses import dataclass
@@ -223,30 +224,38 @@ class DatasetValidator:
         return True
     
     def _is_clause_satisfied(self, clause_str: str, assignment: Dict[int, bool]) -> bool:
-        """Check if a single clause is satisfied by an assignment"""
-        # Parse clause handling Unicode characters
-        
-        # Split by disjunction symbols (both ∨ and ∨)
-        literals = clause_str.replace("∨", "∨").split("∨")
-        
-        for literal in literals:
-            literal = literal.strip()
-            
-            # Check if negated (handle Unicode ¬)
-            negated = "¬" in literal or "¬" in literal
-            
-            # Extract variable number - handle Unicode
-            var_part = literal.replace("¬", "").replace("¬", "").replace("x", "").strip()
-            try:
-                var_num = int(var_part)
-                if var_num in assignment:
-                    var_value = assignment[var_num]
-                    literal_value = var_value if not negated else not var_value
-                    if literal_value:
-                        return True  # Clause satisfied by this literal
-            except ValueError:
-                continue
-        
+        """Check if a single clause is satisfied by an assignment.
+        Supports both Unicode (¬, ∨) and ASCII (NOT, OR) formats.
+        """
+        text = clause_str.strip()
+        # Choose splitter: prefer Unicode disjunction, otherwise ASCII OR (case-insensitive)
+        if "∨" in text:
+            parts = [p.strip() for p in text.split("∨") if p.strip()]
+        else:
+            parts = [p.strip() for p in re.split(r"\bOR\b", text, flags=re.IGNORECASE) if p.strip()]
+
+        for literal in parts:
+            lit = literal.strip()
+            # Detect negation via Unicode or ASCII
+            is_neg = ("¬" in lit) or (re.search(r"\bNOT\b", lit, flags=re.IGNORECASE) is not None)
+
+            # Extract variable number like x12 or X12
+            m = re.search(r"[xX]\s*(\d+)", lit)
+            if not m:
+                # Fallback: try to parse any trailing number token
+                m2 = re.search(r"(\d+)", lit)
+                if not m2:
+                    continue
+                var_num = int(m2.group(1))
+            else:
+                var_num = int(m.group(1))
+
+            if var_num in assignment:
+                var_value = assignment[var_num]
+                val = var_value if not is_neg else (not var_value)
+                if val:
+                    return True
+
         return False  # No literal satisfied the clause
     
     def _validate_solver_trace(self, steps: List[Dict[str, Any]], num_variables: int) -> List[str]:
@@ -362,12 +371,21 @@ class DatasetValidator:
         # Check minimum length
         if len(reasoning_trace) < 500:
             warnings.append("Reasoning trace is quite short (< 500 characters)")
-        
-        # Check for key sections
-        required_sections = ["Problem Description", "Solving Process", "Step-by-Step Reasoning", "Final Result"]
-        for section in required_sections:
-            if section not in reasoning_trace:
-                errors.append(f"Missing section: '{section}' in reasoning trace")
+
+        # Support both legacy sectioned format and new tag-structured format
+        has_tagged = "<final_answer>" in reasoning_trace
+        if has_tagged:
+            # Tagged format checks
+            tag_requirements = ["<problem>", "<steps>", "<final_answer>"]
+            for tag in tag_requirements:
+                if tag not in reasoning_trace:
+                    errors.append(f"Missing tag: '{tag}' in reasoning trace")
+        else:
+            # Legacy header-based format checks
+            required_sections = ["Problem Description", "Solving Process", "Step-by-Step Reasoning", "Final Result"]
+            for section in required_sections:
+                if section not in reasoning_trace:
+                    errors.append(f"Missing section: '{section}' in reasoning trace")
         
         # Check explanation quality in steps
         steps = instance.get("step_by_step", [])
@@ -381,8 +399,10 @@ class DatasetValidator:
         if short_explanations > len(steps) * 0.3:  # More than 30% have short explanations
             warnings.append(f"Many steps have short explanations ({short_explanations}/{len(steps)})")
         
-        # Check for mathematical notation
-        if "∨" not in reasoning_trace and "∧" not in reasoning_trace:
+        # Check for mathematical notation (support Unicode or ASCII)
+        has_unicode = ("∨" in reasoning_trace) or ("∧" in reasoning_trace)
+        has_ascii = re.search(r"\b(OR|AND)\b", reasoning_trace, flags=re.IGNORECASE) is not None
+        if not (has_unicode or has_ascii):
             warnings.append("Reasoning trace lacks mathematical notation")
         
         statistics = {

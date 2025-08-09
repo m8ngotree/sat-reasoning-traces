@@ -1,11 +1,18 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 import json
 from src.core.sat_solver import SolverTrace, SolverStep, DecisionType
 from src.core.sat_generator import ProblemType
 
 
 class TraceFormatter:
-    def __init__(self):
+    def __init__(self,
+                 ascii_mode: bool = True,
+                 max_steps_in_response: int = 200,
+                 max_propagations_head: int = 5,
+                 max_propagations_tail: int = 5,
+                 include_backtracks: bool = True,
+                 show_problem_type_name: bool = False,
+                 show_domain_constraints: bool = False):
         self.problem_descriptions = {
             ProblemType.RANDOM_3SAT: "random 3-SAT problem",
             ProblemType.PIGEONHOLE: "pigeonhole principle problem", 
@@ -13,206 +20,200 @@ class TraceFormatter:
             ProblemType.HAMILTONIAN_PATH: "Hamiltonian path problem",
             ProblemType.SCHEDULING: "scheduling problem"
         }
+        self.ascii_mode = ascii_mode
+        self.max_steps_in_response = max_steps_in_response
+        self.max_propagations_head = max_propagations_head
+        self.max_propagations_tail = max_propagations_tail
+        self.include_backtracks = include_backtracks
+        self.show_problem_type_name = show_problem_type_name
+        self.show_domain_constraints = show_domain_constraints
+    
+    def _to_ascii_clause(self, text: str) -> str:
+        """Convert pretty symbols (¬, ∨, ∧) into ASCII-friendly tokens."""
+        if text is None:
+            return ""
+        # Replace negations ¬x42 -> NOT x42
+        # Do a simple pass: replace '¬x' with 'NOT x'
+        text = text.replace("¬x", "NOT x")
+        # Replace OR/AND separators
+        text = text.replace(" ∨ ", " OR ")
+        text = text.replace(" ∧ ", " AND ")
+        return text
     
     def format_problem_description(self, trace: SolverTrace) -> str:
         problem_type = trace.instance.problem_type
         metadata = trace.instance.metadata
         
-        desc = f"This is a {self.problem_descriptions.get(problem_type, 'SAT problem')} "
+        intro = self.problem_descriptions.get(problem_type, 'SAT problem') if self.show_problem_type_name else 'SAT problem'
+        desc = f"This is a {intro} "
         desc += f"with {trace.instance.num_variables} variables and {len(trace.instance.clauses)} clauses.\n"
         
-        if problem_type == ProblemType.PIGEONHOLE:
-            desc += f"It involves placing {metadata.get('num_pigeons', 'N')} pigeons into "
-            desc += f"{metadata.get('num_holes', 'M')} holes, where each pigeon must be in exactly one hole "
-            desc += "and no two pigeons can share the same hole. Since there are more pigeons than holes, "
-            desc += "this problem is unsatisfiable by the pigeonhole principle.\n"
+        if self.show_domain_constraints and problem_type == ProblemType.PIGEONHOLE:
+            desc += f"It involves {metadata.get('num_pigeons', 'N')} pigeons and {metadata.get('num_holes', 'M')} holes; "
+            desc += "each pigeon must occupy exactly one hole, and no hole may hold two pigeons.\n"
         
-        elif problem_type == ProblemType.GRAPH_COLORING:
-            desc += f"It involves coloring a graph with {metadata.get('num_vertices', 'N')} vertices "
-            desc += f"and {metadata.get('num_edges', 'M')} edges using {metadata.get('num_colors', 'K')} colors, "
-            desc += "such that no two adjacent vertices have the same color.\n"
+        elif self.show_domain_constraints and problem_type == ProblemType.GRAPH_COLORING:
+            desc += f"Graph with {metadata.get('num_vertices', 'N')} vertices and {metadata.get('num_edges', 'M')} edges, "
+            desc += f"using {metadata.get('num_colors', 'K')} colors with adjacency constraints.\n"
         
-        elif problem_type == ProblemType.SCHEDULING:
-            desc += f"It involves scheduling {metadata.get('num_jobs', 'N')} jobs into "
-            desc += f"{metadata.get('num_time_slots', 'T')} time slots, where each job must be assigned "
-            desc += f"to exactly one slot and {metadata.get('num_conflicts', 'C')} pairs of jobs cannot "
-            desc += "be scheduled at the same time due to conflicts.\n"
+        elif self.show_domain_constraints and problem_type == ProblemType.SCHEDULING:
+            desc += f"Schedule {metadata.get('num_jobs', 'N')} jobs into {metadata.get('num_time_slots', 'T')} time slots "
+            desc += f"with {metadata.get('num_conflicts', 'C')} job-conflict pairs.\n"
         
-        elif problem_type == ProblemType.RANDOM_3SAT:
+        elif self.show_domain_constraints and problem_type == ProblemType.RANDOM_3SAT:
             ratio = metadata.get('clause_to_variable_ratio', 0)
-            desc += f"Each clause contains exactly 3 literals. The clause-to-variable ratio is {ratio:.2f}. "
-            if ratio > 4.2:
-                desc += "This ratio suggests the problem is likely in the hard/unsatisfiable region.\n"
-            else:
-                desc += "This ratio suggests the problem is likely satisfiable.\n"
+            desc += f"Clause/variable ratio {ratio:.2f}.\n"
         
         return desc
     
-    def format_step_explanation(self, step: SolverStep, step_index: int) -> str:
-        explanation = f"Step {step_index + 1}: "
-        
-        if step.decision_type == DecisionType.DECIDE:
-            var = step.assignment.variable
-            value = "true" if step.assignment.value else "false"
-            explanation += f"We make a decision to set variable x{var} = {value} at decision level {step.decision_level}. "
-            explanation += "This is a branching point where we explore one possible assignment to try to satisfy the formula."
-        
-        elif step.decision_type == DecisionType.PROPAGATE:
-            var = step.assignment.variable
-            value = "true" if step.assignment.value else "false"
-            explanation += f"Unit propagation forces variable x{var} = {value}. "
-            explanation += f"This assignment is required because clause '{step.clause}' becomes a unit clause "
-            explanation += f"under the current partial assignment, leaving only one way to satisfy it."
-        
-        elif step.decision_type == DecisionType.CONFLICT:
-            explanation += f"A conflict is detected! Clause '{step.clause}' cannot be satisfied "
-            explanation += "under the current assignment. All literals in this clause evaluate to false, "
-            explanation += "making it impossible to satisfy the entire formula with the current assignments."
-        
-        elif step.decision_type == DecisionType.BACKTRACK:
-            explanation += f"We backtrack to decision level {step.decision_level}. "
-            explanation += "This means we undo recent assignments and try a different path through the search space. "
-            explanation += "Backtracking helps us explore alternative assignments when conflicts are encountered."
-        
-        elif step.decision_type == DecisionType.RESTART:
-            explanation += "The solver performs a restart, clearing all assignments and beginning the search anew. "
-            explanation += "This helps escape from difficult regions of the search space."
-        
-        # Add assignment state information
-        if step.assignments_after:
-            assigned_vars = sorted(step.assignments_after.keys())
-            if len(assigned_vars) <= 10:  # Only show if manageable number
-                assignments_str = ", ".join([f"x{var}={str(step.assignments_after[var]).lower()}" 
-                                           for var in assigned_vars])
-                explanation += f" Current assignments: {{{assignments_str}}}."
-            else:
-                explanation += f" Total variables assigned: {len(assigned_vars)}."
-        
-        return explanation
+    def _format_step_delta(self, step: SolverStep) -> str:
+        """Render a concise delta-only step line using ASCII clauses when needed."""
+        if step.decision_type == DecisionType.DECIDE and step.assignment:
+            return f"D: decide x{step.assignment.variable}={'true' if step.assignment.value else 'false'} @L{step.decision_level}"
+        if step.decision_type == DecisionType.PROPAGATE and step.assignment:
+            clause_str = str(step.clause) if step.clause else ""
+            if self.ascii_mode:
+                clause_str = self._to_ascii_clause(clause_str)
+            return f"P: x{step.assignment.variable}={'true' if step.assignment.value else 'false'} (from {clause_str})"
+        if step.decision_type == DecisionType.CONFLICT:
+            clause_str = str(step.clause) if step.clause else ""
+            if self.ascii_mode:
+                clause_str = self._to_ascii_clause(clause_str)
+            return f"C: conflict on ({clause_str}) @L{step.decision_level}"
+        if step.decision_type == DecisionType.BACKTRACK and self.include_backtracks:
+            return f"B: backtrack to L{step.decision_level}"
+        if step.decision_type == DecisionType.RESTART:
+            return "R: restart"
+        return ""  # Fallback for steps we choose not to print
     
     def format_reasoning_trace(self, trace: SolverTrace) -> str:
-        formatted_trace = "# SAT Solving Reasoning Trace\n\n"
-        
-        # Problem description
-        formatted_trace += "## Problem Description\n"
-        formatted_trace += self.format_problem_description(trace)
-        formatted_trace += "\n"
-        
-        # Show the clauses in a readable format
-        formatted_trace += "## Clauses to Satisfy\n"
-        for i, clause in enumerate(trace.instance.clauses[:10]):  # Show first 10 clauses
-            formatted_trace += f"{i+1}. {clause}\n"
-        if len(trace.instance.clauses) > 10:
-            formatted_trace += f"... and {len(trace.instance.clauses) - 10} more clauses\n"
-        formatted_trace += "\n"
-        
-        # Solving process
-        formatted_trace += "## Solving Process\n"
-        formatted_trace += "The solver will systematically assign truth values to variables while maintaining "
-        formatted_trace += "the satisfiability of all clauses. When conflicts arise, the solver backtracks and "
-        formatted_trace += "tries alternative assignments.\n\n"
-        
-        # Step-by-step reasoning
-        formatted_trace += "## Step-by-Step Reasoning\n\n"
-        
-        key_steps = self._select_key_steps(trace.steps)
-        
-        for i, step in enumerate(key_steps):
-            formatted_trace += self.format_step_explanation(step, i) + "\n\n"
-        
-        # Final result
-        formatted_trace += "## Final Result\n"
-        if trace.final_result is True:
-            formatted_trace += "**SATISFIABLE**: A satisfying assignment was found!\n\n"
-            if trace.final_assignment:
-                assigned_vars = sorted(trace.final_assignment.keys())
-                if len(assigned_vars) <= 20:
-                    assignment_str = ", ".join([f"x{var}={str(trace.final_assignment[var]).lower()}" 
-                                              for var in assigned_vars])
-                    formatted_trace += f"**Satisfying assignment**: {{{assignment_str}}}\n\n"
-                else:
-                    formatted_trace += f"**Satisfying assignment found** with {len(assigned_vars)} variables assigned.\n\n"
-            
-            formatted_trace += "This assignment makes all clauses evaluate to true, proving that "
-            formatted_trace += "the Boolean formula is satisfiable.\n"
-        
-        elif trace.final_result is False:
-            formatted_trace += "**UNSATISFIABLE**: No satisfying assignment exists.\n\n"
-            formatted_trace += "The solver has exhaustively explored all possible variable assignments "
-            formatted_trace += "and determined that no assignment can make all clauses true simultaneously. "
-            formatted_trace += "This proves the Boolean formula is unsatisfiable.\n"
-        
-        else:
-            formatted_trace += "**UNKNOWN**: The solving process was incomplete.\n"
-        
-        # Summary statistics
-        formatted_trace += f"\n## Solving Statistics\n"
-        formatted_trace += f"- Total steps: {len(trace.steps)}\n"
-        formatted_trace += f"- Decision steps: {sum(1 for s in trace.steps if s.decision_type == DecisionType.DECIDE)}\n"
-        formatted_trace += f"- Propagation steps: {sum(1 for s in trace.steps if s.decision_type == DecisionType.PROPAGATE)}\n"
-        formatted_trace += f"- Conflicts encountered: {sum(1 for s in trace.steps if s.decision_type == DecisionType.CONFLICT)}\n"
-        formatted_trace += f"- Backtrack operations: {sum(1 for s in trace.steps if s.decision_type == DecisionType.BACKTRACK)}\n"
-        
-        return formatted_trace
+        """Produce a concise, tag-structured reasoning trace suitable for LLM finetuning."""
+        # Problem
+        problem_desc = self.format_problem_description(trace).strip()
+        problem_block = f"<problem>\n{problem_desc}\n</problem>\n\n"
+
+        # Steps (condensed)
+        key_steps = self._select_key_steps(trace.steps, self.max_steps_in_response)
+        step_lines: List[str] = []
+        for step in key_steps:
+            line = self._format_step_delta(step)
+            if line:
+                step_lines.append(line)
+        steps_block = "<steps>\n" + "\n".join(step_lines) + "\n</steps>\n\n"
+
+        # Result + optional proof outline
+        outline_block = ""
+        if trace.final_result is False:
+            outline = self._build_unsat_outline(trace.steps)
+            if outline:
+                outline_block = "<proof_outline>\n" + "\n".join(outline) + "\n</proof_outline>\n\n"
+
+        final_answer = "SAT" if trace.final_result is True else ("UNSAT" if trace.final_result is False else "UNKNOWN")
+        final_block = f"<final_answer>{final_answer}</final_answer>"
+
+        return problem_block + steps_block + outline_block + final_block
     
-    def _select_key_steps(self, steps: List[SolverStep], max_steps: int = 50) -> List[SolverStep]:
+    def _select_key_steps(self, steps: List[SolverStep], max_steps: int = 200) -> List[SolverStep]:
+        """Select a compact subset of steps prioritizing decisions, conflicts, and backtracks,
+        with sampled propagations (head and tail)."""
         if len(steps) <= max_steps:
             return steps
-        
-        key_steps = []
-        
-        # Always include first few steps
-        key_steps.extend(steps[:5])
-        
-        # Include all conflicts and backtracking
-        conflicts_and_backtracks = [s for s in steps if s.decision_type in [DecisionType.CONFLICT, DecisionType.BACKTRACK]]
-        key_steps.extend(conflicts_and_backtracks)
-        
-        # Include some decision points
+
         decisions = [s for s in steps if s.decision_type == DecisionType.DECIDE]
-        if len(decisions) > 10:
-            # Sample decisions evenly
-            step_size = len(decisions) // 10
-            key_steps.extend(decisions[::step_size])
-        else:
-            key_steps.extend(decisions)
-        
-        # Include some unit propagations 
+        conflicts = [s for s in steps if s.decision_type == DecisionType.CONFLICT]
+        backtracks = [s for s in steps if s.decision_type == DecisionType.BACKTRACK]
         propagations = [s for s in steps if s.decision_type == DecisionType.PROPAGATE]
+
+        key_steps: List[SolverStep] = []
+        key_steps.extend(decisions)
+        key_steps.extend(conflicts)
+        if self.include_backtracks:
+            key_steps.extend(backtracks)
+
+        # Sample propagations
         if propagations:
-            key_steps.extend(propagations[:5])  # First few propagations
-            if len(propagations) > 10:
-                key_steps.extend(propagations[-5:])  # Last few propagations
-        
-        # Always include last few steps
+            head = propagations[: self.max_propagations_head]
+            tail = propagations[-self.max_propagations_tail :] if len(propagations) > self.max_propagations_head else []
+            key_steps.extend(head)
+            key_steps.extend(tail)
+
+        # Always include first and last few raw steps for context
+        key_steps.extend(steps[:3])
         key_steps.extend(steps[-3:])
-        
-        # Remove duplicates while preserving order
+
+        # De-dup and sort
         seen = set()
-        unique_steps = []
-        for step in key_steps:
-            if step.step_number not in seen:
-                seen.add(step.step_number)
-                unique_steps.append(step)
-        
-        # Sort by step number
+        unique_steps: List[SolverStep] = []
+        for s in key_steps:
+            if s.step_number not in seen:
+                seen.add(s.step_number)
+                unique_steps.append(s)
         unique_steps.sort(key=lambda s: s.step_number)
-        
-        return unique_steps[:max_steps]
+
+        # Ensure hard cap
+        if len(unique_steps) > max_steps:
+            # Keep all decisions/conflicts/backtracks first, then truncate propagations as needed
+            priority = {
+                DecisionType.DECIDE: 0,
+                DecisionType.CONFLICT: 0,
+                DecisionType.BACKTRACK: 1 if self.include_backtracks else 2,
+                DecisionType.PROPAGATE: 2,
+                DecisionType.RESTART: 3,
+            }
+            unique_steps.sort(key=lambda s: (priority.get(s.decision_type, 9), s.step_number))
+            unique_steps = unique_steps[:max_steps]
+            unique_steps.sort(key=lambda s: s.step_number)
+
+        return unique_steps
+
+    def _build_unsat_outline(self, steps: List[SolverStep]) -> List[str]:
+        """Construct a brief outline over top-level branches for UNSAT proofs."""
+        outline: List[str] = []
+        # Find top-level decisions (decision_level == 1)
+        top_decisions: List[Tuple[int, int, bool]] = []  # (index, var, value)
+        for idx, s in enumerate(steps):
+            if s.decision_type == DecisionType.DECIDE and s.decision_level == 1 and s.assignment:
+                top_decisions.append((idx, s.assignment.variable, s.assignment.value))
+
+        if not top_decisions:
+            return outline
+
+        for i, (start_idx, var, val) in enumerate(top_decisions):
+            # Determine end of this top-level branch segment
+            end_idx = len(steps)
+            for j in range(start_idx + 1, len(steps)):
+                sj = steps[j]
+                if (sj.decision_type == DecisionType.DECIDE and sj.decision_level == 1) or \
+                   (sj.decision_type == DecisionType.BACKTRACK and sj.decision_level == 0):
+                    end_idx = j
+                    break
+
+            conflicts = sum(1 for s in steps[start_idx:end_idx] if s.decision_type == DecisionType.CONFLICT)
+            outline.append(
+                f"Branch x{var}={'true' if val else 'false'} ⇒ {conflicts} conflict(s)"
+            )
+
+        outline.append("All top-level branches lead to conflict ⇒ UNSAT")
+        return outline
     
     def format_trace_for_training(self, trace: SolverTrace) -> Dict[str, Any]:
-        """Format trace for machine learning training data"""
-        
+        """Format trace for machine learning training data with ASCII-friendly clauses and compact reasoning."""
         reasoning_trace = self.format_reasoning_trace(trace)
-        
-        # Create a structured format suitable for LLM training
+
+        if self.ascii_mode:
+            clauses_out = [self._to_ascii_clause(str(clause)) for clause in trace.instance.clauses]
+            dimacs_out = trace.instance.to_dimacs()  # DIMACS is already ASCII
+        else:
+            clauses_out = [str(clause) for clause in trace.instance.clauses]
+            dimacs_out = trace.instance.to_dimacs()
+
         training_data = {
             "problem": {
                 "type": trace.instance.problem_type.value,
                 "num_variables": trace.instance.num_variables,
                 "num_clauses": len(trace.instance.clauses),
-                "clauses": [str(clause) for clause in trace.instance.clauses],
-                "dimacs": trace.instance.to_dimacs(),
+                "clauses": clauses_out,
+                "dimacs": dimacs_out,
                 "metadata": trace.instance.metadata
             },
             "reasoning_trace": reasoning_trace,
@@ -225,7 +226,6 @@ class TraceFormatter:
             },
             "step_by_step": [step.to_dict() for step in trace.steps]
         }
-        
         return training_data
     
     def format_multiple_traces(self, traces: List[SolverTrace]) -> List[Dict[str, Any]]:

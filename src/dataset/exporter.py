@@ -20,6 +20,10 @@ class ExportConfig:
     include_step_details: bool = True
     max_trace_length: Optional[int] = None
     anonymize_data: bool = False
+    hide_problem_type_in_instruction: bool = True
+    # Instruction content controls
+    max_instruction_clauses: Optional[int] = None  # None = include all clauses
+    include_dimacs_in_instruction: bool = False
 
 
 class DatasetExporter:
@@ -29,6 +33,14 @@ class DatasetExporter:
         self.output_dir.mkdir(exist_ok=True)
         
         self.logger = logging.getLogger(__name__)
+    
+    def _to_ascii_clause(self, text: str) -> str:
+        if text is None:
+            return ""
+        text = text.replace("¬x", "NOT x")
+        text = text.replace(" ∨ ", " OR ")
+        text = text.replace(" ∧ ", " AND ")
+        return text
     
     def export_to_huggingface_format(self, dataset: Dict[str, Any], dataset_name: str = "sat_reasoning") -> Path:
         """Export dataset in Hugging Face datasets format"""
@@ -380,17 +392,29 @@ class DatasetExporter:
         """Create instruction text for the SAT problem"""
         problem = instance["problem"]
         
-        instruction = f"Solve this {problem['type'].replace('_', ' ')} Boolean satisfiability problem:\n\n"
+        type_str = problem['type'].replace('_', ' ')
+        if self.config.hide_problem_type_in_instruction:
+            instruction = f"Solve this Boolean satisfiability (SAT) problem:\n\n"
+        else:
+            instruction = f"Solve this {type_str} Boolean satisfiability problem:\n\n"
         instruction += f"Variables: {problem['num_variables']}\n"
         instruction += f"Clauses: {problem['num_clauses']}\n\n"
         
-        # Show first few clauses
+        # Optionally include DIMACS
+        if self.config.include_dimacs_in_instruction:
+            instruction += "DIMACS format (CNF):\n"
+            instruction += problem.get("dimacs", "") + "\n\n"
+
+        # Show clauses (all, or truncated by max_instruction_clauses)
         instruction += "Clauses to satisfy:\n"
-        for i, clause in enumerate(problem["clauses"][:10]):
-            instruction += f"{i+1}. {clause}\n"
-        
-        if len(problem["clauses"]) > 10:
-            instruction += f"... and {len(problem['clauses']) - 10} more clauses\n"
+        clauses = problem["clauses"]
+        limit = self.config.max_instruction_clauses
+        show_count = len(clauses) if limit is None else min(limit, len(clauses))
+        for i in range(show_count):
+            instruction += f"{i+1}. {self._to_ascii_clause(str(clauses[i]))}\n"
+
+        if show_count < len(clauses):
+            instruction += f"... and {len(clauses) - show_count} more clauses\n"
         
         instruction += "\nProvide step-by-step reasoning to determine if this formula is satisfiable."
         
