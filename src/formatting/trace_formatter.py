@@ -17,7 +17,6 @@ class TraceFormatter:
             ProblemType.RANDOM_3SAT: "random 3-SAT problem",
             ProblemType.PIGEONHOLE: "pigeonhole principle problem", 
             ProblemType.GRAPH_COLORING: "graph coloring problem",
-            ProblemType.HAMILTONIAN_PATH: "Hamiltonian path problem",
             ProblemType.SCHEDULING: "scheduling problem"
         }
         self.ascii_mode = ascii_mode

@@ -1,68 +1,66 @@
 # SAT Reasoning Dataset Generator
 
-A comprehensive system for building large-scale synthetic datasets of detailed reasoning traces from Boolean satisfiability (SAT) problems to enhance logical reasoning capabilities in large language models.
+A system for generating synthetic datasets of Boolean satisfiability (SAT) problems with detailed reasoning traces for training and evaluating models on logical reasoning.
 
-## 🎯 Overview
+## Overview
 
-This project generates high-quality training data by:
-- Creating diverse SAT problem instances (Random 3-SAT, Pigeonhole Principle, Graph Coloring, Scheduling)  
-- Solving them with detailed step-by-step traces using the DPLL algorithm
-- Converting solver traces into natural language reasoning explanations
-- Exporting datasets in multiple ML-friendly formats (HuggingFace, OpenAI, Alpaca, etc.)
-- Providing comprehensive validation and quality assurance
+This project produces training data by:
+- Creating diverse SAT problem instances (Random 3-SAT, Pigeonhole Principle, Graph Coloring, Scheduling)
+- Solving them with detailed step-by-step traces using a DPLL-based solver
+- Converting solver traces into compact natural language explanations
+- Exporting datasets in multiple formats (HuggingFace, OpenAI, Alpaca, CSV, HDF5, PyTorch)
+- Providing validation and basic quality checks
 
-## 🚀 Features
+## Features
 
 ### Problem Generation
-- **Random 3-SAT**: Configurable clause-to-variable ratios for varying difficulty
-- **Pigeonhole Principle**: Guaranteed unsatisfiable instances for proof learning
-- **Graph Coloring**: NP-complete problems with real-world relevance  
-- **Scheduling**: Resource allocation problems with conflict constraints
+- Random 3-SAT: configurable clause-to-variable ratios
+- Pigeonhole Principle: guaranteed UNSAT instances
+- Graph Coloring: NP-complete constraint problems
+- Scheduling: job/slot allocation with conflicts
 
-### Solver Algorithm
-- **DPLL (Davis-Putnam-Logemann-Loveland)**: Classic recursive algorithm with backtracking
-- Generates detailed step-by-step execution traces for educational purposes
+### Solver
+- DPLL (Davis–Putnam–Logemann–Loveland) with backtracking and unit propagation
+- Generates step-by-step execution traces
 
-### Natural Language Generation
-- Converts solver steps into human-readable explanations
-- Problem descriptions with context and background
-- Step-by-step reasoning with mathematical notation
-- Final result explanations with proof summaries
+### Natural Language Formatting
+- Tag-structured, concise reasoning traces
+- Optional ASCII clause rendering and domain context
 
 ### Export Formats
-- **HuggingFace**: Instruction-response format for fine-tuning
-- **OpenAI**: Chat completion format for GPT fine-tuning
-- **Alpaca**: Instruction-following format
-- **PyTorch**: Tensors for neural network training
-- **CSV/HDF5/XML**: Analysis and storage formats
+- HuggingFace (instruction/response JSONL)
+- OpenAI (chat fine-tuning JSONL)
+- Alpaca JSON
+- CSV (analysis)
+- HDF5 (storage)
+- PyTorch tensors (features/labels + metadata)
 
-### Quality Assurance
-- Schema validation for data structure integrity
-- SAT logic validation for correctness
-- Reasoning quality assessment
-- Statistical analysis and reporting
+### Validation
+- Schema checks for generated instances
+- SAT logic and trace-consistency checks
+- Reasoning trace quality heuristics
 
 ## Installation
 
 ```bash
-git clone https://github.com/yourusername/sat-rl-environment.git
+git clone https://github.com/m8ngotree/sat-rl-environment.git
 cd sat-rl-environment
 pip install -r requirements.txt
 ```
 
 ## Quick Start
 
-### Generate a Sample Instance
+Generate and solve a sample instance:
 ```bash
 python main.py sample
 ```
 
-### Generate a Small Dataset  
+Generate a small dataset:
 ```bash
-python main.py generate --num-instances 100 --output-dir test_dataset
+python main.py generate --num-instances 100 --output-dir sat_dataset
 ```
 
-### Complete Pipeline
+Run the end-to-end pipeline (generate, validate, export):
 ```bash
 python main.py pipeline --num-instances 1000 --formats huggingface csv
 ```
@@ -80,11 +78,11 @@ config = DatasetConfig(
     problem_type_distribution={
         ProblemType.RANDOM_3SAT: 0.5,
         ProblemType.PIGEONHOLE: 0.2,
-        ProblemType.GRAPH_COLORING: 0.2,  
-        ProblemType.SCHEDULING: 0.1
+        ProblemType.GRAPH_COLORING: 0.2,
+        ProblemType.SCHEDULING: 0.1,
     },
     solver_types=["DPLL"],
-    max_solve_time_seconds=120
+    max_solve_time_seconds=120,
 )
 
 generator = DatasetGenerator(config)
@@ -97,122 +95,55 @@ generator.save_dataset(dataset, "json")
 from src.dataset.validator import DatasetValidator
 from src.dataset.exporter import DatasetExporter
 
-# Validate dataset
 validator = DatasetValidator()
 result = validator.validate_dataset_file("dataset.json")
 print(validator.generate_validation_report(result))
 
-# Export to multiple formats
 exporter = DatasetExporter()
 exported_files = exporter.export_all_formats(dataset)
 ```
 
-## Architecture
+## Repository Structure
 
 ```
 sat-rl-environment/
 ├── src/
 │   ├── core/
-│   │   ├── sat_generator.py      # SAT problem instance generation
-│   │   └── sat_solver.py         # DPLL solver implementation  
+│   │   ├── sat_generator.py      # SAT instance generation
+│   │   └── sat_solver.py         # DPLL solver with tracing
 │   ├── dataset/
-│   │   ├── generator.py          # Dataset creation
-│   │   ├── validator.py          # Quality assurance and validation
-│   │   └── exporter.py           # Multi-format export functionality
+│   │   ├── generator.py          # Dataset creation and saving
+│   │   ├── validator.py          # Validation and reporting
+│   │   └── exporter.py           # Multi-format export
 │   └── formatting/
-│       └── trace_formatter.py    # Natural language trace generation
-├── main.py                       # Command-line interface
-└── requirements.txt             # Dependencies
+│       └── trace_formatter.py    # Natural language trace formatting
+├── tests/                        # Unit tests
+├── main.py                       # CLI entry point
+└── requirements.txt              # Dependencies
 ```
 
 ## Output Structure
 
-Generated datasets are organized in run-specific directories:
+Datasets are written to run-specific directories under the output directory:
 
 ```
 sat_dataset/
-├── run_20250106_143022/
-│   ├── sat_dataset_20250106_143022.json
-│   └── dataset_info_20250106_143022.json
-├── run_20250106_151045/
-│   ├── sat_dataset_20250106_151045.json
-│   └── dataset_info_20250106_151045.json
-└── ...
+└── run_YYYYMMDD_HHMMSS/
+    ├── sat_dataset_YYYYMMDD_HHMMSS.json
+    └── dataset_info_YYYYMMDD_HHMMSS.json
 ```
 
-## Use Cases
+## Development
 
-### Large Language Model Training
-- Fine-tune models on logical reasoning tasks
-- Improve step-by-step problem solving capabilities  
-- Learn mathematical proof techniques
-- Understand satisfiability and constraint satisfaction
+- Python 3.8+
+- Run tests: `pytest -q`
+- Code style: follow type annotations and keep functions short and readable
 
-### Research Applications  
-- Study SAT solver behavior and performance
-- Develop new heuristics and algorithms
-- Benchmark logical reasoning systems
-- Create educational materials for SAT solving
+## License
 
-### Educational Content
-- Generate textbook examples and exercises
-- Create interactive learning materials
-- Provide worked solutions for complex problems
-- Demonstrate algorithmic thinking patterns
+This project is licensed under the MIT License. See `LICENSE` for details.
 
-## Dataset Statistics
+## Acknowledgments
 
-A typical dataset contains:
-- **Problem Diversity**: 4 different SAT problem types
-- **Size Range**: 10-50 variables, 20-300 clauses per instance
-- **Solver Coverage**: DPLL algorithm traces with educational explanations
-- **Trace Quality**: 500-5000 character natural language explanations
-- **Success Rate**: >95% valid instances after quality filtering
-
-## Validation Features
-
-- **Structure Validation**: JSON schema compliance
-- **Logic Validation**: SAT problem correctness and solver trace consistency  
-- **Quality Assessment**: Natural language explanation completeness
-- **Statistical Analysis**: Distribution balance and complexity metrics
-
-## Example Output
-
-```
-# SAT Solving Reasoning Trace
-
-## Problem Description
-This is a random 3-SAT problem with 12 variables and 30 clauses.
-Each clause contains exactly 3 literals. The clause-to-variable ratio is 2.50.
-This ratio suggests the problem is likely satisfiable.
-
-## Step-by-Step Reasoning
-
-Step 1: We make a decision to set variable x1 = true at decision level 1.
-This is a branching point where we explore one possible assignment...
-
-Step 2: Unit propagation forces variable x3 = false. This assignment is 
-required because clause 'x3 ∨ ¬x7 ∨ x12' becomes a unit clause...
-
-## Final Result
-**SATISFIABLE**: A satisfying assignment was found!
-**Satisfying assignment**: {x1=true, x2=false, x3=false, ...}
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)  
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- SAT solving algorithm based on the classic DPLL technique
-- Inspired by the need for high-quality logical reasoning training data
-- Built for the machine learning and automated reasoning communities
+- Based on the classic DPLL SAT solving technique
+- Designed for research and educational workflows that require explainable reasoning traces

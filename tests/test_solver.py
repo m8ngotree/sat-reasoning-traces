@@ -87,6 +87,108 @@ class TestDPLLSolverBasic(unittest.TestCase):
                 prev_level = step.decision_level
 
 
+class TestDPLLSolverAdvanced(unittest.TestCase):
+    def test_backtracking_needed_sat(self):
+        # Construct a formula with no initial unit clauses where x1=True causes conflict,
+        # forcing backtrack to x1=False which is SAT.
+        # Clauses: (x1 ∨ x2) ∧ (¬x1 ∨ x3) ∧ (¬x1 ∨ ¬x3)
+        inst = SATInstance(
+            num_variables=3,
+            clauses=[
+                Clause([1, 2]),
+                Clause([-1, 3]),
+                Clause([-1, -3]),
+            ],
+            problem_type=ProblemType.RANDOM_3SAT,
+            metadata={},
+        )
+        solver = DPLLSolver(inst)
+        result = solver.solve()
+        trace = solver.get_trace()
+
+        self.assertTrue(result)
+        self.assertIsNotNone(trace.final_assignment)
+        self.assertTrue(is_formula_satisfied(inst, trace.final_assignment))
+        # Ensure there was at least one DECIDE and a BACKTRACK before success
+        decision_steps = [s for s in trace.steps if s.decision_type == DecisionType.DECIDE]
+        backtracks = [s for s in trace.steps if s.decision_type == DecisionType.BACKTRACK]
+        self.assertGreaterEqual(len(decision_steps), 2)
+        self.assertGreaterEqual(len(backtracks), 1)
+
+    def test_graph_coloring_triangle_sat(self):
+        # Triangle graph with 3 colors is SAT
+        gen = SATGenerator(seed=0)
+        edges = [(0, 1), (1, 2), (0, 2)]
+        inst = gen.generate_graph_coloring(num_vertices=3, edges=edges, num_colors=3)
+        solver = DPLLSolver(inst)
+        result = solver.solve()
+        trace = solver.get_trace()
+
+        self.assertTrue(result)
+        self.assertIsNotNone(trace.final_assignment)
+        self.assertTrue(is_formula_satisfied(inst, trace.final_assignment))
+
+    def test_graph_coloring_triangle_unsat(self):
+        # Triangle graph with 2 colors is UNSAT
+        gen = SATGenerator(seed=0)
+        edges = [(0, 1), (1, 2), (0, 2)]
+        inst = gen.generate_graph_coloring(num_vertices=3, edges=edges, num_colors=2)
+        solver = DPLLSolver(inst)
+        result = solver.solve()
+        trace = solver.get_trace()
+
+        self.assertFalse(result)
+        self.assertIsNone(trace.final_assignment)
+        # There should be at least one backtrack in a non-trivial UNSAT proof
+        backtracks = [s for s in trace.steps if s.decision_type == DecisionType.BACKTRACK]
+        self.assertGreaterEqual(len(backtracks), 1)
+
+    def test_scheduling_sat(self):
+        # 3 jobs, 2 slots, only one conflict -> SAT
+        gen = SATGenerator(seed=1)
+        inst = gen.generate_scheduling_problem(
+            num_jobs=3,
+            num_time_slots=2,
+            conflicts=[(0, 1)],
+        )
+        solver = DPLLSolver(inst)
+        result = solver.solve()
+        trace = solver.get_trace()
+
+        self.assertTrue(result)
+        self.assertIsNotNone(trace.final_assignment)
+        self.assertTrue(is_formula_satisfied(inst, trace.final_assignment))
+
+    def test_scheduling_unsat(self):
+        # 2 jobs, 1 slot, conflict between jobs -> UNSAT (both cannot be in the only slot)
+        gen = SATGenerator(seed=2)
+        inst = gen.generate_scheduling_problem(
+            num_jobs=2,
+            num_time_slots=1,
+            conflicts=[(0, 1)],
+        )
+        solver = DPLLSolver(inst)
+        result = solver.solve()
+        trace = solver.get_trace()
+
+        self.assertFalse(result)
+        self.assertIsNone(trace.final_assignment)
+
+    def test_random_3sat_sanity(self):
+        # Deterministic small random instance; verify internal consistency
+        gen = SATGenerator(seed=42)
+        inst = gen.generate_random_3sat(num_variables=6, num_clauses=18)
+        solver = DPLLSolver(inst)
+        sat = solver.solve()
+        trace = solver.get_trace()
+
+        self.assertIsNotNone(trace.final_result)
+        if sat:
+            self.assertIsNotNone(trace.final_assignment)
+            self.assertTrue(is_formula_satisfied(inst, trace.final_assignment))
+        else:
+            self.assertIsNone(trace.final_assignment)
+
 if __name__ == "__main__":
     unittest.main()
 

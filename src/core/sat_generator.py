@@ -9,7 +9,6 @@ class ProblemType(Enum):
     RANDOM_3SAT = "random_3sat"
     PIGEONHOLE = "pigeonhole"
     GRAPH_COLORING = "graph_coloring"
-    HAMILTONIAN_PATH = "hamiltonian_path"
     SCHEDULING = "scheduling"
 
 

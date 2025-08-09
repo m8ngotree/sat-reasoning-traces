@@ -464,6 +464,8 @@ class DatasetValidator:
         # Dataset-level statistics
         problem_types = {}
         satisfiability_dist = {"sat": 0, "unsat": 0, "unknown": 0}
+        # Per-problem-type satisfiability breakdown
+        satisfiability_by_problem_type: Dict[str, Dict[str, int]] = {}
         
         for instance in dataset["instances"]:
             prob_type = instance.get("problem", {}).get("type", "unknown")
@@ -472,14 +474,18 @@ class DatasetValidator:
             sat_result = instance.get("solution", {}).get("satisfiable")
             if sat_result is True:
                 satisfiability_dist["sat"] += 1
+                satisfiability_by_problem_type.setdefault(prob_type, {"sat": 0, "unsat": 0, "unknown": 0})["sat"] += 1
             elif sat_result is False:
                 satisfiability_dist["unsat"] += 1
+                satisfiability_by_problem_type.setdefault(prob_type, {"sat": 0, "unsat": 0, "unknown": 0})["unsat"] += 1
             else:
                 satisfiability_dist["unknown"] += 1
+                satisfiability_by_problem_type.setdefault(prob_type, {"sat": 0, "unsat": 0, "unknown": 0})["unknown"] += 1
         
         all_statistics.update({
             "problem_type_distribution": problem_types,
-            "satisfiability_distribution": satisfiability_dist
+            "satisfiability_distribution": satisfiability_dist,
+            "satisfiability_by_problem_type": satisfiability_by_problem_type
         })
         
         is_valid = len(all_errors) == 0
@@ -519,11 +525,22 @@ class DatasetValidator:
         # Statistics
         if result.statistics:
             report += "## Statistics\n"
+
+            def _format_dict(d: Dict[str, Any], indent: int = 0) -> str:
+                lines = []
+                pad = "  " * indent
+                for k, v in d.items():
+                    if isinstance(v, dict):
+                        lines.append(f"{pad}- {k}:")
+                        lines.append(_format_dict(v, indent + 1))
+                    else:
+                        lines.append(f"{pad}- {k}: {v}")
+                return "\n".join(lines)
+
             for key, value in result.statistics.items():
                 if isinstance(value, dict):
                     report += f"- **{key}**:\n"
-                    for subkey, subvalue in value.items():
-                        report += f"  - {subkey}: {subvalue}\n"
+                    report += _format_dict(value, indent=1) + "\n"
                 else:
                     report += f"- **{key}**: {value}\n"
             report += "\n"
