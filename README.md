@@ -137,7 +137,6 @@ sat_dataset/
 
 - Python 3.8+
 - Run tests: `pytest -q`
-- Code style: follow type annotations and keep functions short and readable
 
 ## License
 
@@ -146,4 +145,3 @@ This project is licensed under the MIT License. See `LICENSE` for details.
 ## Acknowledgments
 
 - Based on the classic DPLL SAT solving technique
-- Designed for research and educational workflows that require explainable reasoning traces
